@@ -48,7 +48,7 @@ go run cmd/cli/main.go
 * First clone the project:
 
 ```shell
-git clone 
+git clone git@github.com:DistAlchemist/Mongongo.git
 ```
 
 or sync with the remote:
