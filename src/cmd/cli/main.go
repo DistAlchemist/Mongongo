@@ -33,11 +33,11 @@ func processServerQuery(line string) {
 	if err != nil {
 		log.Fatal("calling:", err)
 	}
-	fmt.Printf("reply.result: %+v\n", reply.Result)
+	log.Printf("reply.result: %+v\n", reply.Result)
 }
 
 func processCLISTMT(line string) {
-	fmt.Println("processing CLI statement")
+	log.Println("processing CLI statement")
 }
 
 func processLine(line string) {
@@ -63,7 +63,7 @@ func main() {
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
-	fmt.Printf("Connected to %v:%v!\n", *hostName, *rpcPort)
+	log.Printf("Connected to %v:%v!\n", *hostName, *rpcPort)
 	for {
 		fmt.Print(prompt + "> ")
 		line, err := reader.ReadString('\n')

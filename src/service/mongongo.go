@@ -1,6 +1,10 @@
 package service
 
-import "fmt"
+import (
+	"log"
+
+	"github.com/DistAlchemist/Mongongo/mql"
+)
 
 // Mongongo expose the interface of operations
 type Mongongo struct {
@@ -16,7 +20,7 @@ type ExecuteArgs struct {
 
 // ExecuteReply reply format of executeQueryOnServer
 type ExecuteReply struct {
-	Result string
+	Result mql.Result
 }
 
 // Insert updates tableNmae.key.columnFamilyColumn with (cellData, timeStamp)
@@ -41,7 +45,7 @@ func (mg *Mongongo) remove(tableName, key, columnFamilyColumn string) error {
 func (mg *Mongongo) ExecuteQueryOnServer(args *ExecuteArgs, reply *ExecuteReply) error {
 	//
 	line := args.Line
-	fmt.Printf("server executing %+v\n", line)
-	reply.Result = "Success!"
+	log.Printf("server executing %+v\n", line)
+	reply.Result = mql.ExecuteQuery(line)
 	return nil
 }
