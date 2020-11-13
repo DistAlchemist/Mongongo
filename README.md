@@ -2,7 +2,7 @@
 
 Cassandra and Zookeeper in Go.
 
-# Getting Started
+## Getting Started
 
 * Install [Go 1.15.2](https://golang.org/dl/)
 * Enable Go module and Setup Go package proxy
@@ -43,7 +43,7 @@ go run cmd/mgserver/main.go
 go run cmd/cli/main.go
 ```
 
-# Design
+## Design
 
 * The design mostly follow the first commit version of [Cassandra](https://github.com/apache/cassandra)
 
@@ -64,7 +64,7 @@ SET tableName.columnFamilyName['rowKey']['columnKey'] = 'value'
   * Add zookeeper-like support.
 
 
-# Contributing
+## Contributing
 
 * First clone the project:
 
@@ -101,10 +101,10 @@ git push origin dev-test # push local branch to origin with branch name `dev-tes
 
 Then it should be really convenient to manully create pull request from github panel.
 
-# Example
+## Example
 
 ![mongongo](pics/mongongo.gif)
 
-# License
+## License
 
 MIT License
