@@ -1,6 +1,6 @@
 # Mongongo
 
-TL;DR: Cassandra and Zookeeper in Go.
+Cassandra and Zookeeper in Go.
 
 # Getting Started
 
@@ -43,6 +43,21 @@ go run cmd/mgserver/main.go
 go run cmd/cli/main.go
 ```
 
+# Design
+
+* The design mostly follow the first commit version of [Cassandra](https://github.com/apache/cassandra)
+
+* Currently only a dummy `SET` operation is supported:
+
+```shell
+SET tableName.columnFamilyName['rowKey']['columnKey'] = 'value'
+```
+
+* The project is roughly divided into three layers:
+  * Command Line Interface (parse SQL to command)
+  * Mongongo Server (determine which nodes need to perform the operation, send the operation to their storage layer)
+  * Storage Layer (perform specific operation, update commitLog, memTable, ssTable etc.)
+
 # Contributing
 
 * First clone the project:
@@ -73,6 +88,12 @@ git commit -m "rewrite sql parser" # commit locally
 ```
 
 * You may commit many times locally. Once you feel good about your branch, push it to remote.
+
+```shell
+git push origin dev-test # push local branch to origin with branch name `dev-test`
+```
+
+Then it should be really convenient to manully create pull request from github panel.
 
 # Example
 
