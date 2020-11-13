@@ -43,6 +43,13 @@ go run cmd/mgserver/main.go
 go run cmd/cli/main.go
 ```
 
+# Contributing
+
+
+# Example
+
+![mongongo](pics/mongongo.gif)
+
 # License
 
 MIT License

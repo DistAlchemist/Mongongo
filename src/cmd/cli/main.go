@@ -34,6 +34,9 @@ func processServerQuery(line string) {
 		log.Fatal("calling:", err)
 	}
 	log.Printf("reply.result: %+v\n", reply.Result)
+	for k, v := range reply.Result.ResultSet {
+		log.Printf("%v: %v\n", k, v)
+	}
 }
 
 func processCLISTMT(line string) {

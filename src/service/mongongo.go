@@ -9,8 +9,9 @@ import (
 // Mongongo expose the interface of operations
 type Mongongo struct {
 	// Mongongo struct
-	Hostname string
-	Port     int
+	Hostname       string
+	Port           int
+	storageService *StorageService
 }
 
 // ExecuteArgs arguments of executeQueryOnServer
@@ -48,4 +49,10 @@ func (mg *Mongongo) ExecuteQueryOnServer(args *ExecuteArgs, reply *ExecuteReply)
 	log.Printf("server executing %+v\n", line)
 	reply.Result = mql.ExecuteQuery(line)
 	return nil
+}
+
+// Start setup other service such as storageService
+func (mg *Mongongo) Start() {
+	mg.storageService = GetInstance()
+	mg.storageService.Start()
 }
