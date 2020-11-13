@@ -58,6 +58,12 @@ SET tableName.columnFamilyName['rowKey']['columnKey'] = 'value'
   * Mongongo Server (determine which nodes need to perform the operation, send the operation to their storage layer)
   * Storage Layer (perform specific operation, update commitLog, memTable, ssTable etc.)
 
+* TODO
+  * Rewrite a comprehensive SQL parser.
+  * Build storage layer.
+  * Add zookeeper-like support.
+
+
 # Contributing
 
 * First clone the project:
