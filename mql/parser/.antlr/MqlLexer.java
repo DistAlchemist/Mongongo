@@ -1,4 +1,4 @@
-// Generated from /data/Mongongo/src/mql/parser/Mql.g4 by ANTLR 4.8
+// Generated from /home/gqz/projects/go/src/github.com/DistAlchemist/Mongongo/mql/parser/Mql.g4 by ANTLR 4.8
 import org.antlr.v4.runtime.Lexer;
 import org.antlr.v4.runtime.CharStream;
 import org.antlr.v4.runtime.Token;
