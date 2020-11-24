@@ -91,6 +91,7 @@ or sync with the remote:
 ```shell
 git fetch origin
 git checkout master
+git rebase origin/master
 ```
 
 * Create a new branch `dev-featurename` 
