@@ -17,16 +17,17 @@ go env -w GOPROXY=https://goproxy.io,direct
 First setup your Go project structure, put the following into your `~/.bashrc`:
 
 ```shell
-export $GOPATH=~/projects/go  # any where you like, except $GOROOT
-export $mg $GOPATH/src/github.com/DistAlchemist
+export GOPATH=~/projects/go  # any where you like, except $GOROOT
+export mg=$GOPATH/src/github.com/DistAlchemist
 ```
 
 Then make directories:
 
 ```shell
-mkdir $mg
+mkdir -p $mg
 cd $mg
 git clone https://github.com/DistAlchemist/Mongongo.git
+# or git clone git@github.com:DistAlchemist/Mongongo.git
 cd Mongongo
 ```
 
@@ -82,6 +83,7 @@ SET tableName.columnFamilyName['rowKey']['columnKey'] = 'value'
 ```shell
 cd $mg 
 git clone https://github.com/DistAlchemist/Mongongo.git
+# or git clone git@github.com:DistAlchemist/Mongongo.git
 ```
 
 or sync with the remote:
@@ -112,7 +114,7 @@ git commit -m "rewrite sql parser" # commit locally
 git push origin dev-test # push local branch to origin with branch name `dev-test`
 ```
 
-* Then view `https://github.com/DistAlchemist/Mongongo`, Click the Compare & Pull Request button next to your `dev-test` branch.
+* Then view [https://github.com/DistAlchemist/Mongongo](https://github.com/DistAlchemist/Mongongo), Click the Compare & Pull Request button next to your `dev-test` branch.
 
 ## Example
 
