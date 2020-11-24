@@ -1,4 +1,4 @@
-// Generated from /data/Mongongo/src/mql/parser/Mql.g4 by ANTLR 4.8
+// Generated from /home/gqz/projects/go/src/github.com/DistAlchemist/Mongongo/mql/parser/Mql.g4 by ANTLR 4.8
 import org.antlr.v4.runtime.atn.*;
 import org.antlr.v4.runtime.dfa.DFA;
 import org.antlr.v4.runtime.*;
