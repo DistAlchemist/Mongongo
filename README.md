@@ -4,7 +4,7 @@ Cassandra and Zookeeper in Go.
 
 ## Getting Started
 
-* Install [Go 1.15.2](https://golang.org/dl/)
+* Install [Go 1.15](https://golang.org/dl/)
 * Enable Go module and Setup Go package proxy
 
 ```shell
@@ -14,9 +14,20 @@ go env -w GOPROXY=https://goproxy.io,direct
 
 * Download
 
+First setup your Go project structure, put the following into your `~/.bashrc`:
+
 ```shell
+export $GOPATH=~/projects/go  # any where you like, except $GOROOT
+export $mg $GOPATH/src/github.com/DistAlchemist
+```
+
+Then make directories:
+
+```shell
+mkdir $mg
+cd $mg
 git clone https://github.com/DistAlchemist/Mongongo.git
-cd Mongongo/src
+cd Mongongo
 ```
 
 * Setup [tmux](https://github.com/tmux/tmux/wiki) for multi-terminal (recommended)
@@ -66,16 +77,18 @@ SET tableName.columnFamilyName['rowKey']['columnKey'] = 'value'
 
 ## Contributing
 
-* First clone the project:
+* First clone the repo:
 
 ```shell
-git clone git@github.com:DistAlchemist/Mongongo.git
+cd $mg 
+git clone https://github.com/DistAlchemist/Mongongo.git
 ```
 
 or sync with the remote:
 
 ```shell
-git pull
+git fetch origin
+git checkout master
 ```
 
 * Create a new branch `dev-featurename` 
@@ -99,7 +112,7 @@ git commit -m "rewrite sql parser" # commit locally
 git push origin dev-test # push local branch to origin with branch name `dev-test`
 ```
 
-Then it should be really convenient to manully create pull request from github panel.
+* Then view `https://github.com/DistAlchemist/Mongongo`, Click the Compare & Pull Request button next to your `dev-test` branch.
 
 ## Example
 
