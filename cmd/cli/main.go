@@ -54,7 +54,12 @@ func processServerQuery(line string) {
 
 func printHelp() {
 	fmt.Printf("Usage: (currently supported)\n")
-	fmt.Printf("\tSET tableName.columnFamilyName['rowKey']['column']='value'\n")
+	fmt.Printf("\tSET table.superCF['rowKey']['superColumnKey']['columnKey']='value'\n")
+	fmt.Printf("\tSET table.superCF['rowKey']['superColumnKey']={'columnKey'=>'value',...}\n")
+	fmt.Printf("\tSET table.superCF['rowKey'] = {'superColumnKey'=>{columnMapValue},...}\n")
+	fmt.Printf("\tSET table.standardCF['key']['column']='value'\n")
+	fmt.Printf("\tSET table.standardCF['key']={'columnKey'=>'value',...}\n")
+	// fmt.Printf("\tSET tableName.columnFamilyName['rowKey']['column']='value'\n")
 	fmt.Printf("keywords(case insensitive): SET, GET, SELECT, DELETE, EXPLAIN\n\n")
 	fmt.Printf("press Ctrl-C or type exit to quit\n\n")
 }
