@@ -1,3 +1,8 @@
+// Copyright (c) 2020 DistAlchemist
+//
+// This software is released under the MIT License.
+// https://opensource.org/licenses/MIT
+
 package service
 
 import (
@@ -17,12 +22,12 @@ import (
 
 // StorageService apply functions to storage layer
 type StorageService struct {
-	//
 	uptime int64
 	// storageLoadBalancer *StorageLoadBalancer
 	endpointSnitch locator.EndPointSnitch
 	tokenMetadata  locator.TokenMetadata
 	nodePicker     locator.RackStrategy
+	partitioner    iPartitioner
 }
 
 var (
@@ -30,6 +35,7 @@ var (
 	instance *StorageService
 )
 
+// GetInstance return storageServer instance
 func GetInstance() *StorageService {
 	mu.Lock()
 	defer mu.Unlock()
@@ -53,14 +59,24 @@ func (ss *StorageService) init() {
 }
 
 func (ss *StorageService) getNStorageEndPointMap(key string) map[network.EndPoint]network.EndPoint {
-	// dummy implementation
-	// should hash the key to get EndPoint map.
-	res := make(map[network.EndPoint]network.EndPoint)
-	res[network.EndPoint{"localhost", "11111"}] = network.EndPoint{"localhost", "11111"}
-	return res
+	token := ss.partitioner.hash(key)
+	return ss.nodePicker.GetStorageEndPoints(token)
 }
 
+func (ss *StorageService) initPartitioner() {
+	hashingStrategy := config.HashingStrategy
+	if hashingStrategy == config.Ophf {
+		ss.partitioner = orderPreservingHashPartitioner{}
+	} else {
+		ss.partitioner = randomPartitioner{}
+	}
+}
+
+// Start will setup RPC server for storage service
 func (ss *StorageService) Start() {
+	ss.initPartitioner()
+	// ss.storageMetadata = db.GetManagerInstance().Start()
+	_ = db.GetManagerInstance().Start()
 	serv := rpc.NewServer()
 	serv.Register(ss)
 	// ===== workaround ==========
@@ -73,15 +89,15 @@ func (ss *StorageService) Start() {
 	http.DefaultServeMux = oldMux
 	// ===========================
 	l, e := net.Listen("tcp", "localhost:11111")
-	fmt.Println("StorageService listening to localhost:11111")
+	log.Printf("StorageService listening to localhost:11111\n")
 	if e != nil {
 		log.Fatal("listen error: ", e)
 	}
 	go http.Serve(l, mux)
 }
 
+// DoRowMutation as a rpc served by storage service
 func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowMutationReply) error {
-	//
 	fmt.Println("enter DoRowMutation")
 	reply.Result = "DoRowMutation success"
 	return nil
