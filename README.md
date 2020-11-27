@@ -119,7 +119,7 @@ git push origin dev-test # push local branch to origin with branch name `dev-tes
 
 ## Example
 
-![mongongo](pics/mongongo.gif)
+![mongongo](pics/mongongo2.gif)
 
 ## License
 
