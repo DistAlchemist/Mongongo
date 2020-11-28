@@ -43,7 +43,6 @@ var (
 	LogFileDir = "~/var/storage/commitlog" // pre
 	// BootstrapFileDir for bootstrap file
 	BootstrapFileDir = "~/var/storage/bootstrap" // pre
-
 	// LogRotationThres for log rotation threshold, defaults to 128MB
 	LogRotationThres = 128 * 1024 * 1024
 	// FastSync defaults to false
@@ -55,7 +54,6 @@ var (
 	// currently we cannot change the schema online
 	// this will be improved in the future
 	Tables = []string{"table1", "table2"} // TO BE IMPROVED
-
 	// ApplicationColumnFamilies is a set of column family names
 	ApplicationColumnFamilies = map[string]bool{
 		"standardCF1": true,
@@ -100,8 +98,6 @@ var (
 	JobTrackerHost string
 	// ConfigFileName is the path to config file
 	ConfigFileName string
-	// RingRange is the size of consistent hashing ring
-	RingRange = uint64(1 << 32)
 )
 
 // DatabaseDescriptor contains meta data for the underlying storage system
