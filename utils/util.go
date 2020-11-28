@@ -1,3 +1,8 @@
+// Copyright (c) 2020 DistAlchemist
+//
+// This software is released under the MIT License.
+// https://opensource.org/licenses/MIT
+
 package utils
 
 // I'm not intended to provide a general function interaface currently for convenience.
