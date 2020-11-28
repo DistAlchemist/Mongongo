@@ -30,19 +30,19 @@ var (
 	// Seeds is a set of nodes to connect to when a new node join the cluster
 	Seeds map[string]bool
 	// MetadataDir is the dir for store meta data
-	MetadataDir = "~/var/storage/system" // pre read from file
+	MetadataDir = "var/storage/system" // pre read from file
 	// SnapshotDir for snapshot
 	SnapshotDir = MetadataDir + string(os.PathSeparator) + "snapshot" // pre
 	// MapOutputDirs keep the list of map output dirs
 	MapOutputDirs []string
 	// DataFileDirs keep the list of data file dirs
-	DataFileDirs = []string{"~/var/storage/data"} // pre
+	DataFileDirs = []string{"var/storage/data"} // pre
 	// CurIndex stores the current index into the above list of dirs
 	CurIndex = 0
 	// LogFileDir for log file
-	LogFileDir = "~/var/storage/commitlog" // pre
+	LogFileDir = "var/storage/commitlog" // pre
 	// BootstrapFileDir for bootstrap file
-	BootstrapFileDir = "~/var/storage/bootstrap" // pre
+	BootstrapFileDir = "var/storage/bootstrap" // pre
 
 	// LogRotationThres for log rotation threshold, defaults to 128MB
 	LogRotationThres = 128 * 1024 * 1024
