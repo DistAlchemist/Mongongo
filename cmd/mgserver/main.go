@@ -1,3 +1,8 @@
+// Copyright (c) 2020 DistAlchemist
+//
+// This software is released under the MIT License.
+// https://opensource.org/licenses/MIT
+
 package main
 
 import (
@@ -6,11 +11,11 @@ import (
 	"net/http"
 	"net/rpc"
 
-	"github.com/DistAlchemist/Mongongo/service"
+	"github.com/DistAlchemist/Mongongo/server"
 )
 
 func main() {
-	mg := new(service.Mongongo)
+	mg := new(server.Mongongo)
 	mg.Hostname = "localhost"
 	mg.Port = 1111
 	mg.Start()

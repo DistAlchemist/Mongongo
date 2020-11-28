@@ -1,3 +1,7 @@
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Language](https://img.shields.io/badge/Language-Go-blue.svg)](https://golang.org/)
+<!-- [![Build Status](https://travis-ci.org/DistAlchemist/Mongongo.svg?branch=master)](https://travis-ci.org/pingcap/tidb) -->
+
 # Mongongo
 
 Cassandra and Zookeeper in Go.
@@ -119,7 +123,7 @@ git push origin dev-test # push local branch to origin with branch name `dev-tes
 
 ## Example
 
-![mongongo](pics/mongongo.gif)
+![mongongo](pics/mongongo2.gif)
 
 ## License
 

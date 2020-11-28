@@ -3,9 +3,9 @@
 // This software is released under the MIT License.
 // https://opensource.org/licenses/MIT
 
-package locator
+package db
 
-// TokenMetadata matains information of tokens
-type TokenMetadata struct {
-	//
+// IColumn provide interface for Column and SuperColumn
+type IColumn interface {
+	addColumn(name string, column IColumn)
 }
