@@ -1,6 +1,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Language](https://img.shields.io/badge/Language-Go-blue.svg)](https://golang.org/)
-<!-- [![Build Status](https://travis-ci.org/DistAlchemist/Mongongo.svg?branch=master)](https://travis-ci.org/pingcap/tidb) -->
+![build](https://github.com/DistAlchemist/Mongongo/workflows/Go/badge.svg)
 
 # Mongongo
 
