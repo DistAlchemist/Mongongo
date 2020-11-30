@@ -13,12 +13,12 @@ import (
 )
 
 type mapPair struct {
-	key string 
-	value string 
+	key   string
+	value string
 }
 
 type superMapPair struct {
-	key string 
+	key     string
 	mapPair []mapPair
 }
 
@@ -36,11 +36,11 @@ func doSemanticAnalysis(ast *node) Plan {
 }
 
 func getSimpleExpr(ast *node) string {
-	if ast.id != parser.MqlParserRULE_cellValue && 
-	   ast.id != parser.MqlParserRULE_columnKey &&
-	   ast.id != parser.MqlParserRULE_rowKey &&
-	   ast.id != parser.MqlParserRULE_superColumnKey &&
-	   ast.id != parser.MqlParserRULE_columnOrSuperColumnKey {
+	if ast.id != parser.MqlParserRULE_cellValue &&
+		ast.id != parser.MqlParserRULE_columnKey &&
+		ast.id != parser.MqlParserRULE_rowKey &&
+		ast.id != parser.MqlParserRULE_superColumnKey &&
+		ast.id != parser.MqlParserRULE_columnOrSuperColumnKey {
 		log.Printf("Invalid type id: %v\n", ast.id)
 	}
 	return ast.children[0].text
@@ -49,34 +49,34 @@ func getSimpleExpr(ast *node) string {
 func getColumnMapExpr(ast *node) []mapPair {
 	if ast.id != parser.MqlParserRULE_columnMapValue {
 		log.Printf("Invalid type id: %v, should be columnMapValue id: %v\n", ast.id,
-			parser.MqlParserRULE_columnMapValue) 
+			parser.MqlParserRULE_columnMapValue)
 	}
 	res := make([]mapPair, 0)
-	for _, entryNode := range ast.children { 
-		columnKey := getSimpleExpr(entryNode.children[0]) 
-		columnValue := getSimpleExpr(entryNode.children[1]) 
-		res = append(res, mapPair{columnKey,columnValue}) 
-	} 
-	return res 
-} 
+	for _, entryNode := range ast.children {
+		columnKey := getSimpleExpr(entryNode.children[0])
+		columnValue := getSimpleExpr(entryNode.children[1])
+		res = append(res, mapPair{columnKey, columnValue})
+	}
+	return res
+}
 
 func getSuperColumnMapExpr(ast *node) []superMapPair {
-	if ast.id != parser.MqlParserRULE_superColumnMapValue { 
-		log.Printf("Invalid type id: %v, should be superColumnMapValue id: %v\n", ast.id, 
-			parser.MqlParserRULE_columnMapValue) 
-	} 
-	res := make([]superMapPair, 0) 
-	for _, entryNode := range ast.children { 
-		superColumnKey := getSimpleExpr(entryNode.children[0]) 
+	if ast.id != parser.MqlParserRULE_superColumnMapValue {
+		log.Printf("Invalid type id: %v, should be superColumnMapValue id: %v\n", ast.id,
+			parser.MqlParserRULE_columnMapValue)
+	}
+	res := make([]superMapPair, 0)
+	for _, entryNode := range ast.children {
+		superColumnKey := getSimpleExpr(entryNode.children[0])
 		columnMapExpr := getColumnMapExpr(entryNode.children[1])
 		entry := superMapPair{superColumnKey, columnMapExpr}
 		res = append(res, entry)
 	}
-	return res 
+	return res
 }
 
-func getColumn(ast *node, pos int) string{
-	return ast.children[pos + 3].children[0].text
+func getColumn(ast *node, pos int) string {
+	return ast.children[pos+3].children[0].text
 }
 
 func compileSet(ast *node) Plan {
@@ -84,15 +84,15 @@ func compileSet(ast *node) Plan {
 	cfMetaData := getColumnFamilyInfo(columnSpec)
 	rowKey := columnSpec.children[2].children[0].text
 	// skip over tableName, columnFamily and rowKey
-	dimensions := len(columnSpec.children) - 3 
-	valueNode := ast.children[1] 
+	dimensions := len(columnSpec.children) - 3
+	valueNode := ast.children[1]
 	var plan Plan
 	if cfMetaData.ColumnType == "Super" { // Super column family
 		if dimensions == 2 {
 			// set table.superCF['rowKey']['superColumnKey']['columnKey']='value'
 			value := getSimpleExpr(valueNode.children[0])
 			superColumnKey := getColumn(columnSpec, 0)
-			columnKey := getColumn(columnSpec, 1) 
+			columnKey := getColumn(columnSpec, 1)
 			plan = setUniqueKey{cfMetaData, rowKey, superColumnKey, columnKey, value}
 		} else if dimensions == 1 {
 			// set table.superCF['rowKey']['superColumnKey']={'columnKey'=>'value',...}
@@ -106,7 +106,7 @@ func compileSet(ast *node) Plan {
 			}
 			superColumnMapExpr := getSuperColumnMapExpr(valueNode.children[0])
 			plan = setSuperColumnMap{cfMetaData, rowKey, superColumnMapExpr}
-		} 
+		}
 	} else { // Standard column family
 		if dimensions == 1 {
 			// set table.standardCF['key']['column']='value'
@@ -122,7 +122,7 @@ func compileSet(ast *node) Plan {
 			plan = setColumnMap{cfMetaData, rowKey, "", columnMapExpr}
 		}
 	}
-	return plan 
+	return plan
 }
 
 func getColumnFamilyInfo(ast *node) config.CFMetaData {
@@ -139,7 +139,7 @@ func getColumnFamilyInfo(ast *node) config.CFMetaData {
 		log.Printf("Invalid column family: %v.%v\n", tableName, columnFamilyName)
 	}
 	// skip over tablName, columnFamily and rowKey
-	dimensions := len(ast.children) - 3 
+	dimensions := len(ast.children) - 3
 	if (cfMetaData.ColumnType == "Super" && dimensions > 2) || (cfMetaData.ColumnType == "Standard" && dimensions > 1) {
 		log.Printf("Too many dimensions: %v for %v\n", dimensions, cfMetaData.ColumnType)
 	}

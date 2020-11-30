@@ -38,7 +38,7 @@ func ExecuteQuery(query string) Result {
 	plan := doSemanticAnalysis(queryTree.children[0])
 	plan.execute()
 	var res Result
-	res.ErrorCode = 0;
+	res.ErrorCode = 0
 	// var action, setResult, getResult string
 	// res.ResultSet = make(map[string]string)
 	// if listener.stmtType == parser.MqlParserRULE_setStmt {
