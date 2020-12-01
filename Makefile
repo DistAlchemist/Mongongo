@@ -34,6 +34,9 @@ TEST_LDFLAGS := ""
 PACKAGE_LIST := go list ./... | grep -vE "cmd" 
 PACKAGES := $$($(PACKAGE_LIST))
 
+CURDIR := $(shell pwd) 
+export PATH := $(CURDIR)/bin/:$(PATH) 
+
 # Targets 
 .PHONY: clean test dev cli mg-server 
 
@@ -46,8 +49,6 @@ test:
 	@export TZ='Asia/Shanghai';\
 	LOG_LEVEL=fatal $(GOTEST) -cover $(PACKAGES)
 
-CURDIR := $(shell pwd) 
-export PATH := $(CURDIR)/bin/:$(PATH) 
 cli:
 	$(GOBUILD) -o bin/cli cmd/cli/main.go 
 

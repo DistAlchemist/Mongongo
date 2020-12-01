@@ -26,8 +26,8 @@ type StorageService struct {
 	// storageLoadBalancer *StorageLoadBalancer
 	endpointSnitch locator.EndPointSnitch
 	tokenMetadata  locator.TokenMetadata
-	nodePicker     locator.RackStrategy
-	partitioner    iPartitioner
+	nodePicker     *locator.RackStrategy
+	partitioner    IPartitioner
 }
 
 var (
@@ -52,23 +52,23 @@ func (ss *StorageService) init() {
 	ss.endpointSnitch = locator.EndPointSnitch{}
 	ss.tokenMetadata = locator.TokenMetadata{}
 	if config.RackAware == true {
-		ss.nodePicker = locator.RackAwareStrategy{}
+		ss.nodePicker = &locator.RackStrategy{I: &locator.RackAwareStrategy{}} // locator.RackAwareStrategy{}
 	} else {
-		ss.nodePicker = locator.RackUnawareStrategy{}
+		ss.nodePicker = &locator.RackStrategy{I: &locator.RackUnawareStrategy{}} // locator.RackUnawareStrategy{}
 	}
 }
 
 func (ss *StorageService) getNStorageEndPointMap(key string) map[network.EndPoint]network.EndPoint {
 	token := ss.partitioner.hash(key)
-	return ss.nodePicker.GetStorageEndPoints(token)
+	return ss.nodePicker.GetHintedStorageEndPoints(token)
 }
 
 func (ss *StorageService) initPartitioner() {
 	hashingStrategy := config.HashingStrategy
 	if hashingStrategy == config.Ophf {
-		ss.partitioner = orderPreservingHashPartitioner{}
+		ss.partitioner = NewOrderPreservingHashPartitioner()
 	} else {
-		ss.partitioner = randomPartitioner{}
+		ss.partitioner = NewRandomPartitioner()
 	}
 }
 
