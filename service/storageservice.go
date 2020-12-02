@@ -22,12 +22,12 @@ import (
 
 // StorageService apply functions to storage layer
 type StorageService struct {
-	uptime int64
-	// storageLoadBalancer *StorageLoadBalancer
-	endpointSnitch locator.EndPointSnitch
-	tokenMetadata  locator.TokenMetadata
-	nodePicker     *locator.RackStrategy
-	partitioner    IPartitioner
+	uptime              int64
+	storageLoadBalancer *StorageLoadBalancer
+	endpointSnitch      locator.EndPointSnitch
+	tokenMetadata       locator.TokenMetadata
+	nodePicker          *locator.RackStrategy
+	partitioner         IPartitioner
 }
 
 var (
@@ -48,7 +48,7 @@ func GetInstance() *StorageService {
 
 func (ss *StorageService) init() {
 	ss.uptime = time.Now().UnixNano() / int64(time.Millisecond)
-	// ss.storageLoadBalancer = StorageLoadBalancer{ss}
+	ss.storageLoadBalancer = NewStorageLoadBalancer(ss)
 	ss.endpointSnitch = locator.EndPointSnitch{}
 	ss.tokenMetadata = locator.TokenMetadata{}
 	if config.RackAware == true {

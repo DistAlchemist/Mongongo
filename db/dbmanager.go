@@ -15,8 +15,8 @@ import (
 )
 
 var (
-	mu       sync.Mutex
-	instance *Manager
+	mu        sync.Mutex
+	minstance *Manager
 )
 
 // Manager manages database
@@ -27,18 +27,25 @@ type Manager struct {
 func GetManagerInstance() *Manager {
 	mu.Lock()
 	defer mu.Unlock()
-	if instance == nil {
-		instance = &Manager{}
-		instance.init()
+	if minstance == nil {
+		minstance = &Manager{}
+		minstance.init()
 	}
-	return instance
+	return minstance
 }
 
 func (d *Manager) init() {
-	// tableToColumnFamily := config.Init()
-	config.Init()
-	// storeMetadata(tableToColumnFamily)
-	// TODO: open tables and do recovery according to commit log
+	// read the config file
+	tableToColumnFamily := config.Init()
+	for table := range tableToColumnFamily {
+		tbl := openTable(table)
+		tbl.onStart()
+	}
+	recoveryMgr := GetRecoveryManager()
+	recoveryMgr.doRecovery()
+	// config.Init()
+	// storeMetadata(tableToColumnFamily) // useless
+
 }
 
 // // create metadata tables. table stores tableName and columnFamilyName

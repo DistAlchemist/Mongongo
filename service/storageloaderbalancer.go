@@ -11,5 +11,15 @@ package service
 // Monitor load information at the interval of 5 minutes then do
 // load balancing operations if necessary.
 type StorageLoadBalancer struct {
-	// storageService *StorageService
+	storageService *StorageService
+}
+
+// NewStorageLoadBalancer initializes a storage load balancer.
+func NewStorageLoadBalancer(ss *StorageService) *StorageLoadBalancer {
+	slb := new(StorageLoadBalancer)
+	slb.storageService = ss
+	// StageManager.registerStage
+	// MessagingService.registerVerbHandlers
+	// storageService.registerComponentForShutdown
+	return slb
 }
