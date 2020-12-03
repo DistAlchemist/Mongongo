@@ -17,6 +17,6 @@ package gms
 //   loadState := ApplicationState{<load string>}
 //   gms.GetGossiper().AddAppState("LOAD STATE", loadState)
 type ApplicationState struct {
-	version int
+	version int32
 	state   string
 }

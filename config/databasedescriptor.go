@@ -28,7 +28,9 @@ var (
 	// RPCTimeoutInMillis set 2s by default
 	RPCTimeoutInMillis = 2000
 	// Seeds is a set of nodes to connect to when a new node join the cluster
-	Seeds map[string]bool
+	Seeds = map[string]bool{
+		"thumm01": true,
+	}
 	// MetadataDir is the dir for store meta data
 	MetadataDir = "var/storage/system" // pre read from file
 	// SnapshotDir for snapshot
@@ -90,7 +92,7 @@ var (
 	// MemtableLifetime is the number of hours to keep a memtable in memory
 	MemtableLifetime = 6
 	// MemtableSize is the size of memtable in memory before it is dumped
-	MemtableSize = 128
+	MemtableSize = 128 // 128 MB
 	// MemtableObjectCount is the number of objects in millions in the memtable before it is dumped
 	MemtableObjectCount = 1
 	// DoConsistencyCheck enables or disables consistency checks.

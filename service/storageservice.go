@@ -11,11 +11,13 @@ import (
 	"net"
 	"net/http"
 	"net/rpc"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/db"
+	"github.com/DistAlchemist/Mongongo/gms"
 	"github.com/DistAlchemist/Mongongo/locator"
 	"github.com/DistAlchemist/Mongongo/network"
 )
@@ -28,6 +30,7 @@ type StorageService struct {
 	tokenMetadata       locator.TokenMetadata
 	nodePicker          *locator.RackStrategy
 	partitioner         IPartitioner
+	storageMetadata     *db.StorageMetadata
 }
 
 var (
@@ -72,11 +75,7 @@ func (ss *StorageService) initPartitioner() {
 	}
 }
 
-// Start will setup RPC server for storage service
-func (ss *StorageService) Start() {
-	ss.initPartitioner()
-	// ss.storageMetadata = db.GetManagerInstance().Start()
-	_ = db.GetManagerInstance().Start()
+func (ss *StorageService) startStorageServer() {
 	serv := rpc.NewServer()
 	serv.Register(ss)
 	// ===== workaround ==========
@@ -88,12 +87,58 @@ func (ss *StorageService) Start() {
 	// ===== workaround ==========
 	http.DefaultServeMux = oldMux
 	// ===========================
-	l, e := net.Listen("tcp", "localhost:11111")
-	log.Printf("StorageService listening to localhost:11111\n")
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal(err)
+	}
+	addr := hostname + ":" + config.StoragePort
+	l, e := net.Listen("tcp", addr)
+	log.Printf("StorageServer listening to %v\n", addr)
 	if e != nil {
 		log.Fatal("listen error: ", e)
 	}
 	go http.Serve(l, mux)
+}
+
+func (ss *StorageService) startControlServer() {
+	serv := rpc.NewServer()
+	serv.Register(ss)
+	// ===== workaround ==========
+	oldMux := http.DefaultServeMux
+	mux := http.NewServeMux()
+	http.DefaultServeMux = mux
+	// ===========================
+	serv.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
+	// ===== workaround ==========
+	http.DefaultServeMux = oldMux
+	// ===========================
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal(err)
+	}
+	addr := hostname + ":" + config.ControlPort
+	l, e := net.Listen("udp", addr)
+	log.Printf("ControlServer listening to %v\n", addr)
+	if e != nil {
+		log.Fatal("listen error: ", e)
+	}
+	go http.Serve(l, mux)
+}
+
+// Start will setup RPC server for storage service
+func (ss *StorageService) Start() {
+	ss.initPartitioner()
+	ss.storageMetadata = db.GetManagerInstance().Start()
+	// _ = db.GetManagerInstance().Start()
+	ss.startStorageServer()
+	ss.startControlServer()
+	ss.storageLoadBalancer.start()
+	gms.GetGossiper().Register(ss)
+	gms.GetGossiper().Start(ss.storageMetadata.GetGeneration())
+	// make sure this token gets gossiped around
+	// TODO
+	// ss.tokenMetadata.Update(ss.storageMetadata.storageID)
+	// gms.GetGossiper().AddApplicationState(..)
 }
 
 // DoRowMutation as a rpc served by storage service
@@ -101,4 +146,10 @@ func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowM
 	fmt.Println("enter DoRowMutation")
 	reply.Result = "DoRowMutation success"
 	return nil
+}
+
+// OnChange implements interface for endpoint
+// state change subscriber
+func (ss *StorageService) OnChange(endpoint network.EndPoint, epState gms.EndPointState) {
+	// TODO
 }

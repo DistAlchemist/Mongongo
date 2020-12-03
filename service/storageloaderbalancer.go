@@ -23,3 +23,8 @@ func NewStorageLoadBalancer(ss *StorageService) *StorageLoadBalancer {
 	// storageService.registerComponentForShutdown
 	return slb
 }
+
+// Start starts storage load balancer
+func (s *StorageLoadBalancer) start() {
+	// TODO
+}

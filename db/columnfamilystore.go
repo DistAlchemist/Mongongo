@@ -160,6 +160,7 @@ func (c *ColumnFamilyStore) onStart() {
 	onSSTableStart(filenames)
 	log.Println("Submitting a major compaction task")
 	go c.doCompaction()
+	// TODO should also submit periodic minor compaction
 }
 
 func (c *ColumnFamilyStore) doCompaction() {
