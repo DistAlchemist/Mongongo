@@ -123,7 +123,7 @@ func (g *Gossiper) runTask() {
 	gDigests := make([]*GossipDigest, 0)
 	g.makeRandomGossipDigest(gDigests)
 	if len(gDigests) > 0 {
-		// TODO
+		// TODO will send gossip messages to other nodes
 	}
 }
 

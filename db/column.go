@@ -16,11 +16,22 @@ type Column struct {
 	Name      string
 	Value     string
 	Timestamp int64
+	size      int32
 	//isMarkedForDelete bool
 }
 
 func (c Column) addColumn(name string, column IColumn) {
 	log.Printf("Invalid method: Column doesn't support addColumn\n")
+}
+
+func (c Column) getSize() int32 {
+	// size of a column:
+	//  4 bytes for name length
+	//  # bytes for name string bytes
+	//  8 bytes for timestamp
+	//  4 bytes for value byte array
+	//  # bytes for value bytes
+	return int32(4 + 8 + 4 + len(c.Name) + len(c.Value))
 }
 
 // delete deletes a Column

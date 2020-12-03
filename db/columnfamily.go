@@ -5,12 +5,15 @@
 
 package db
 
+import "sync/atomic"
+
 // ColumnFamily definition
 type ColumnFamily struct {
 	ColumnFamilyName string
 	ColumnType       string
 	Factory          AColumnFactory
 	Columns          map[string]IColumn
+	size             int32
 }
 
 var typeToColumnFactory = map[string]AColumnFactory{
@@ -38,4 +41,13 @@ func (cf *ColumnFamily) addColumn(columnName string, column IColumn) {
 		cf.Columns = make(map[string]IColumn)
 	}
 	cf.Columns[columnName] = column
+}
+
+func (cf *ColumnFamily) getSize() int32 {
+	if cf.size == 0 {
+		for cfName := range cf.Columns {
+			atomic.AddInt32(&cf.size, cf.Columns[cfName].getSize())
+		}
+	}
+	return cf.size
 }

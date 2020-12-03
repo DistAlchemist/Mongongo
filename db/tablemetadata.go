@@ -59,3 +59,8 @@ func getFileName() string {
 	return config.MetadataDir + string(os.PathSeparator) +
 		table + "-Metadata.db"
 }
+
+func (t *TableMetadata) isValidColumnFamily(cfName string) bool {
+	_, ok := t.cfIDMap[cfName]
+	return ok
+}

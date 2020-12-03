@@ -144,6 +144,9 @@ func (ss *StorageService) Start() {
 // DoRowMutation as a rpc served by storage service
 func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowMutationReply) error {
 	fmt.Println("enter DoRowMutation")
+	// TODO check hints
+	// apply row mutation
+	args.RM.Apply(db.NewRow(args.RM.RowKey))
 	reply.Result = "DoRowMutation success"
 	return nil
 }

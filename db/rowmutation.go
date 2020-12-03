@@ -49,3 +49,18 @@ func (rm *RowMutation) Add(columnFamilyColumn, value string, timestamp int64) {
 	}
 	rm.Modification[columnFamilyName] = columnFamily
 }
+
+// Apply is equivalent to calling commit. This will
+// applies the changes to the table that is obtained
+// by calling Table.open()
+func (rm *RowMutation) Apply(row *Row) {
+	table := openTable(rm.TableName)
+	for cfName := range rm.Modification {
+		if !table.isValidColumnFamily(cfName) {
+			log.Printf("Column Family %v has not been defined.", cfName)
+		} else {
+			row.addColumnFamily(rm.Modification[cfName])
+		}
+	}
+	table.apply(row)
+}

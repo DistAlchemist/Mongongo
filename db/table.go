@@ -112,3 +112,14 @@ func (t *Table) onStart() {
 		}
 	}
 }
+
+func (t *Table) isValidColumnFamily(columnFamily string) bool {
+	return t.tableMetadata.isValidColumnFamily(columnFamily)
+}
+
+func (t *Table) apply(row *Row) {
+	// TODO
+	// 1. write to commit log
+	// 2. update memtable
+	// 3. flush to sstable if memtable exceeds limit
+}

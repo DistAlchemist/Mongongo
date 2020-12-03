@@ -20,7 +20,9 @@ type AColumnFactory interface {
 type ColumnFactory struct{}
 
 func (f ColumnFactory) createColumn(name, value string, timestamp int64) IColumn {
-	return Column{name, value, timestamp}
+	c := Column{}
+	c.Name, c.Value, c.Timestamp = name, value, timestamp
+	return c
 }
 
 // SuperColumnFactory implements AColumnFactory

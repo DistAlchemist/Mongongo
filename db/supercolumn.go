@@ -24,3 +24,8 @@ func NewSuperColumn(name string) SuperColumn {
 	sc.Name = name
 	return sc
 }
+
+func (sc SuperColumn) getSize() int32 {
+	// TODO
+	return 0
+}
