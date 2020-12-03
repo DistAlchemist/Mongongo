@@ -37,6 +37,16 @@ var hashLibrary = []ISimpleHash{
 	&APHash{},
 }
 
+// NewBloomFilterS creates a bf deserialized from data
+func NewBloomFilterS(count, hashes, bitsize int32, bs *bitset.BitSet) *BloomFilter {
+	bf := &BloomFilter{}
+	bf.count = int(count)
+	bf.size = int(bitsize)
+	bf.hashes = int(hashes)
+	bf.filter = bs
+	return bf
+}
+
 // NewBloomFilter gives out a new instance of bf
 func NewBloomFilter(numElements, bitsPerElement int) *BloomFilter {
 	if numElements < 0 || bitsPerElement < 1 {
