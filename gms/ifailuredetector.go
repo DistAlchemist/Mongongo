@@ -11,4 +11,5 @@ import "github.com/DistAlchemist/Mongongo/network"
 // query liveness information of a node in the cluster.
 type IFailureDetector interface {
 	IsAlive(ep network.EndPoint) bool
+	RegisterEventListener(listener IFailureDetectionEventListener)
 }

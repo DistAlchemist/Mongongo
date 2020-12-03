@@ -93,7 +93,7 @@ func NewSSTable(filename string) *SSTable {
 	s.dataFileName = filename
 	_, ok := SSTIndexMetadataMap[s.dataFileName]
 	if !ok {
-		s.loadIndexFile()
+		s.loadIndexFile() // mainly load bloom filter and index file
 	}
 	return s
 }

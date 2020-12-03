@@ -78,6 +78,11 @@ type StorageMetadata struct {
 	generation int
 }
 
+// GetGeneration return generation for this storage metadata
+func (s *StorageMetadata) GetGeneration() int {
+	return s.generation
+}
+
 // RowMutationArgs for rm arguments
 type RowMutationArgs struct {
 	RM RowMutation

@@ -25,7 +25,8 @@ type FailureDetector struct {
 	// 1 min.
 	uptimeThres int64
 	// Time when the module was instantiated.
-	creationTime int64
+	creationTime     int64
+	fdEventListeners []IFailureDetectionEventListener
 }
 
 // GetFailureDetector will create a new instance
@@ -59,4 +60,9 @@ func (f *FailureDetector) IsAlive(ep network.EndPoint) bool {
 	ep2 := network.EndPoint{HostName: ep.HostName, Port: config.ControlPort}
 	epState := GetGossiper().GetEndPointStateForEndPoint(ep2)
 	return epState.IsAlive()
+}
+
+// RegisterEventListener registers event listener for fd
+func (f *FailureDetector) RegisterEventListener(listener IFailureDetectionEventListener) {
+	f.fdEventListeners = append(f.fdEventListeners, listener)
 }
