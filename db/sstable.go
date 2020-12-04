@@ -83,6 +83,9 @@ type KeyPositionInfo struct {
 // SSTable is the struct for SSTable
 type SSTable struct {
 	dataFileName string
+	dataWriter   *os.File
+	blockIndex   map[string]*BlockMetadata
+	blockIndexes []map[string]*BlockMetadata
 }
 
 // NewSSTable initializes a SSTable
@@ -315,4 +318,37 @@ func NewTouchKeyCache(size int) *TouchKeyCache {
 	t := &TouchKeyCache{}
 	t.size = size
 	return t
+}
+
+// NewSSTableP is used for DB writes into the SSTable
+// Use this version to write to the SSTable
+func NewSSTableP(directory, filename, pType string) *SSTable {
+	s := &SSTable{}
+	s.dataFileName = directory + string(os.PathSeparator) +
+		filename + "-Data.db"
+	var err error
+	s.dataWriter, err = os.Create(s.dataFileName)
+	if err != nil {
+		log.Fatal(err)
+	}
+	SSTPositionAfterFirstBlockIndex = 0
+	s.initBlockIndex(pType)
+	s.blockIndexes = make([]map[string]*BlockMetadata, 0)
+	return s
+}
+
+func (s *SSTable) initBlockIndex(pType string) {
+	// TODO make ordered map
+	switch pType {
+	case config.Ophf:
+		s.blockIndex = make(map[string]*BlockMetadata)
+	default:
+		s.blockIndex = make(map[string]*BlockMetadata)
+	}
+}
+
+// BlockMetadata ...
+type BlockMetadata struct {
+	position int64
+	size     int64
 }

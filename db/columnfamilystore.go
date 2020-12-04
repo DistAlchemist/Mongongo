@@ -176,3 +176,16 @@ func (c *ColumnFamilyStore) apply(key string, columnFamily *ColumnFamily, cLogCt
 func (c *ColumnFamilyStore) switchMemtable(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
 	// TODO
 }
+
+func (c *ColumnFamilyStore) getNextFileName() string {
+	// increment twice to generate non-consecutive numbers
+	atomic.AddInt32(&c.fileIdxGenerator, 1)
+	atomic.AddInt32(&c.fileIdxGenerator, 1)
+	name := c.tableName + "-" + c.columnFamilyName + "-" +
+		strconv.Itoa(int(c.fileIdxGenerator))
+	return name
+}
+
+func (c *ColumnFamilyStore) onMemtableFlush(cLogCtx *CommitLogContext) {
+	// TODO
+}
