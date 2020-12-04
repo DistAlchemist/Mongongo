@@ -9,4 +9,6 @@ package db
 type IColumn interface {
 	addColumn(name string, column IColumn)
 	getSize() int32
+	toByteArray() []byte
+	serializedSize() uint32
 }

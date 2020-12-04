@@ -47,7 +47,7 @@ var (
 	BootstrapFileDir = "var/storage/bootstrap" // pre
 
 	// LogRotationThres for log rotation threshold, defaults to 128MB
-	LogRotationThres = 128 * 1024 * 1024
+	LogRotationThres = int64(128 * 1024 * 1024)
 	// FastSync defaults to false
 	FastSync = false
 	// RackAware for replica distribution, default: false

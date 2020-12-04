@@ -166,3 +166,13 @@ func (c *ColumnFamilyStore) onStart() {
 func (c *ColumnFamilyStore) doCompaction() {
 	// TODO
 }
+
+func (c *ColumnFamilyStore) apply(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
+	// c.memtable.mu.Lock()
+	// defer c.memtable.mu.Unlock()
+	c.memtable.put(key, columnFamily, cLogCtx)
+}
+
+func (c *ColumnFamilyStore) switchMemtable(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
+	// TODO
+}

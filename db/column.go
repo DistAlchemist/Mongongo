@@ -7,17 +7,18 @@ package db
 
 import (
 	"bytes"
+	"encoding/binary"
 	"log"
 	"strconv"
 )
 
 // Column stores name and value etc.
 type Column struct {
-	Name      string
-	Value     string
-	Timestamp int64
-	size      int32
-	//isMarkedForDelete bool
+	Name       string
+	Value      string
+	Timestamp  int64
+	size       int32
+	deleteMark bool
 }
 
 func (c Column) addColumn(name string, column IColumn) {
@@ -101,6 +102,42 @@ func NewColumn(name, value string, timestamp int64) Column {
 	c.Name = name
 	c.Value = value
 	c.Timestamp = timestamp
-	//c.isMarkedForDelete = false
+	c.deleteMark = false
 	return c
+}
+
+func (c Column) toByteArray() []byte {
+	buf := make([]byte, 0)
+	// write column name length
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(len(c.Name)))
+	buf = append(buf, b4...)
+	// write column name
+	buf = append(buf, []byte(c.Name)...)
+	// write deleteMark
+	if c.deleteMark {
+		buf = append(buf, byte(1))
+	} else {
+		buf = append(buf, byte(0))
+	}
+	// write timestamp
+	b8 := make([]byte, 8)
+	binary.BigEndian.PutUint64(b8, uint64(c.Timestamp))
+	buf = append(buf, b8...)
+	// write value length
+	binary.BigEndian.PutUint32(b4, uint32(len(c.Value)))
+	buf = append(buf, b4...)
+	// write value bytes
+	buf = append(buf, []byte(c.Value)...)
+	return buf
+}
+
+func (c Column) serializedSize() uint32 {
+	// 4 byte: length of column name
+	// # bytes: column name bytes
+	// 1 byte:  deleteMark
+	// 8 bytes: timestamp
+	// 4 bytes: length of value
+	// # bytes: value bytes
+	return uint32(4 + 1 + 8 + 4 + len(c.Name) + len(c.Value))
 }

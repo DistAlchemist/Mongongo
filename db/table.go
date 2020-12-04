@@ -11,6 +11,7 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 )
 
 var (
@@ -117,9 +118,23 @@ func (t *Table) isValidColumnFamily(columnFamily string) bool {
 	return t.tableMetadata.isValidColumnFamily(columnFamily)
 }
 
+func (t *Table) getNumberOfColumnFamilies() int {
+	return t.tableMetadata.getSize()
+}
+
+// First adds the row to the commit log associated with this
+// table. Then the data associated with the individual column
+// families is also written to the column family store's memtable
 func (t *Table) apply(row *Row) {
-	// TODO
-	// 1. write to commit log
-	// 2. update memtable
-	// 3. flush to sstable if memtable exceeds limit
+	key := row.key
+	// add row to commit log
+	start := time.Now().UnixNano() / int64(time.Millisecond)
+	cLogCtx := openCommitLog(t.tableName).add(row)
+	for cName, columnFamily := range row.columnFamilies {
+		cfStore := t.columnFamilyStores[cName]
+		cfStore.apply(key, columnFamily, cLogCtx)
+	}
+	row.clear()
+	timeTaken := time.Now().UnixNano()/int64(time.Millisecond) - start
+	log.Printf("table.apply(row) took %v ms\n", timeTaken)
 }
