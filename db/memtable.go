@@ -15,8 +15,8 @@ import (
 // Memtable specifies memtable
 type Memtable struct {
 	flushKey         string
-	threshold        int
-	thresholdCnt     int
+	threshold        int32
+	thresholdCnt     int32
 	currentSize      int32
 	currentObjectCnt int32
 	// table and cf name are used to determine the
@@ -36,8 +36,8 @@ type Memtable struct {
 func NewMemtable(table, cfName string) *Memtable {
 	m := &Memtable{}
 	m.flushKey = "FlushKey"
-	m.threshold = config.MemtableSize * 1024 * 1024
-	m.thresholdCnt = config.MemtableObjectCount * 1024 * 1024
+	m.threshold = int32(config.MemtableSize * 1024 * 1024)
+	m.thresholdCnt = int32(config.MemtableObjectCount * 1024 * 1024)
 	m.currentSize = 0
 	m.currentObjectCnt = 0
 	m.isFrozen = false
@@ -47,4 +47,31 @@ func NewMemtable(table, cfName string) *Memtable {
 	m.cfName = cfName
 	m.creationTime = time.Now().UnixNano() / int64(time.Millisecond)
 	return m
+}
+
+// put data into the memtable
+// flush memtable to disk when the size exceeds the threshold
+func (m *Memtable) put(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
+	if m.isThresholdViolated(key) {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		cfStore := openTable(m.tableName).columnFamilyStores[m.cfName]
+		if !m.isFrozen {
+			m.isFrozen = true
+			// submit memtable flush TODO
+			cfStore.switchMemtable(key, columnFamily, cLogCtx)
+		} else {
+			cfStore.apply(key, columnFamily, cLogCtx)
+		}
+	} else {
+		// submit task to put key-cf to memtable TODO
+	}
+}
+
+func (m *Memtable) isThresholdViolated(key string) bool {
+	bVal := false
+	if m.currentSize >= m.threshold || m.currentObjectCnt >= m.thresholdCnt || bVal || key == m.flushKey {
+		return true
+	}
+	return false
 }

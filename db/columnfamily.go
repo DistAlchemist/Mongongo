@@ -5,7 +5,10 @@
 
 package db
 
-import "sync/atomic"
+import (
+	"encoding/binary"
+	"sync/atomic"
+)
 
 // ColumnFamily definition
 type ColumnFamily struct {
@@ -14,6 +17,7 @@ type ColumnFamily struct {
 	Factory          AColumnFactory
 	Columns          map[string]IColumn
 	size             int32
+	deleteMark       bool
 }
 
 var typeToColumnFactory = map[string]AColumnFactory{
@@ -27,6 +31,7 @@ func NewColumnFamily(columnFamilyName, columnType string) *ColumnFamily {
 	cf.ColumnFamilyName = columnFamilyName
 	cf.ColumnType = columnType
 	cf.Factory = typeToColumnFactory[columnType]
+	cf.deleteMark = false
 	return cf
 }
 
@@ -50,4 +55,32 @@ func (cf *ColumnFamily) getSize() int32 {
 		}
 	}
 	return cf.size
+}
+
+func (cf *ColumnFamily) isMarkedForDelete() bool {
+	return cf.deleteMark
+}
+
+func (cf *ColumnFamily) toByteArray() []byte {
+	buf := make([]byte, 0)
+	// write cf name length
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(len(cf.ColumnFamilyName)))
+	buf = append(buf, b4...)
+	// write cf name bytes
+	buf = append(buf, []byte(cf.ColumnFamilyName)...)
+	// write if this cf is marked for delete
+	if cf.deleteMark {
+		buf = append(buf, byte(1))
+	} else {
+		buf = append(buf, byte(0))
+	}
+	// write column size
+	binary.BigEndian.PutUint32(b4, uint32(len(cf.Columns)))
+	buf = append(buf, b4...)
+	// write column bytes
+	for _, column := range cf.Columns {
+		buf = append(buf, column.toByteArray()...)
+	}
+	return buf
 }
