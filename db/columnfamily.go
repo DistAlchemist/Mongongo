@@ -84,3 +84,12 @@ func (cf *ColumnFamily) toByteArray() []byte {
 	}
 	return buf
 }
+
+func (cf *ColumnFamily) getColumnCount() int {
+	// TODO
+	return 0
+}
+
+func (cf *ColumnFamily) addColumns(columnFamily *ColumnFamily) {
+	// TODO
+}

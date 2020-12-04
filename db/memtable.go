@@ -7,6 +7,7 @@ package db
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DistAlchemist/Mongongo/config"
@@ -58,14 +59,41 @@ func (m *Memtable) put(key string, columnFamily *ColumnFamily, cLogCtx *CommitLo
 		cfStore := openTable(m.tableName).columnFamilyStores[m.cfName]
 		if !m.isFrozen {
 			m.isFrozen = true
-			// submit memtable flush TODO
+			// submit memtable flush
+			GetMemtableManager().submit(cfStore.columnFamilyName, m, cLogCtx)
 			cfStore.switchMemtable(key, columnFamily, cLogCtx)
 		} else {
 			cfStore.apply(key, columnFamily, cLogCtx)
 		}
 	} else {
-		// submit task to put key-cf to memtable TODO
+		// submit task to put key-cf to memtable
+		go m.runResolve(key, columnFamily)
 	}
+}
+
+func (m *Memtable) runResolve(key string, columnFamily *ColumnFamily) {
+	oldCf, ok := m.columnFamilies[key]
+	if ok {
+		oldSize := oldCf.size
+		oldObjectCount := oldCf.getColumnCount()
+		oldCf.addColumns(columnFamily)
+		newSize := oldCf.size
+		newObjectCount := oldCf.getColumnCount()
+		m.resolveSize(oldSize, newSize)
+		m.resolveCount(oldObjectCount, newObjectCount)
+	} else {
+		m.columnFamilies[key] = *columnFamily
+		atomic.AddInt32(&m.currentSize, columnFamily.size+int32(len(key)))
+		atomic.AddInt32(&m.currentObjectCnt, int32(columnFamily.getColumnCount()))
+	}
+}
+
+func (m *Memtable) resolveSize(oldSize, newSize int32) {
+	atomic.AddInt32(&m.currentSize, int32(newSize-oldSize))
+}
+
+func (m *Memtable) resolveCount(oldCount, newCount int) {
+	atomic.AddInt32(&m.currentObjectCnt, int32(newCount-oldCount))
 }
 
 func (m *Memtable) isThresholdViolated(key string) bool {
@@ -74,4 +102,37 @@ func (m *Memtable) isThresholdViolated(key string) bool {
 		return true
 	}
 	return false
+}
+
+func (m *Memtable) flush(cLogCtx *CommitLogContext) {
+	// flush this memtable to disk
+	cfStore := openTable(m.tableName).columnFamilyStores[m.cfName]
+	if len(m.columnFamilies) == 0 {
+		// This should be called even if size is 0
+		// Because we should try to delete the useless commitlogs
+		// even though there is nothing to flush in memtables for
+		// a given family like Hints etc.
+		cfStore.onMemtableFlush(cLogCtx)
+		return
+	}
+	// partitioner type: OrderPreserving or Random
+	pType := config.HashingStrategy
+	dir := config.DataFileDirs[0]
+	filename := cfStore.getNextFileName()
+	ssTable := NewSSTableP(dir, filename, pType)
+	switch pType {
+	case config.Ophf:
+		m.flushForOrderPreservingPartitioner(ssTable, cfStore, cLogCtx)
+	default:
+		m.flushForRandomPartitioner(ssTable, cfStore, cLogCtx)
+	}
+	m.columnFamilies = make(map[string]ColumnFamily)
+}
+
+func (m *Memtable) flushForOrderPreservingPartitioner(ssTable *SSTable, cfStore *ColumnFamilyStore, cLogCtx *CommitLogContext) {
+	// TODO
+}
+
+func (m *Memtable) flushForRandomPartitioner(ssTable *SSTable, cfStore *ColumnFamilyStore, cLogCtx *CommitLogContext) {
+	// TODO
 }
