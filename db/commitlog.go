@@ -9,7 +9,9 @@ import (
 	"encoding/binary"
 	"log"
 	"os"
+	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,6 +71,10 @@ func NewCommitLogContext(file string, position int64) *CommitLogContext {
 	return c
 }
 
+func (c *CommitLogContext) isValidContext() bool {
+	return c.position != -1
+}
+
 func (c *CommitLog) setNextFileName() {
 	c.logFile = config.LogFileDir + string(os.PathSeparator) +
 		"CommitLog-" + c.table + "-" +
@@ -110,6 +116,14 @@ func (c *CommitLog) writeCommitLogHeaderB(bytes []byte, reset bool) {
 		// seek back to the old position
 		c.logWriter.Seek(currentPos, 0)
 	}
+}
+
+func (c *CommitLog) writeCommitLogHeaderC(commitLogFileName string, bytes []byte) {
+	logWriter := c.createWriter(commitLogFileName)
+	logWriter.Seek(0, 0)
+	// write the commit log header
+	logWriter.Write(bytes)
+	logWriter.Close()
 }
 
 func (c *CommitLog) writeCLH(bytes []byte, reset bool) {
@@ -247,5 +261,103 @@ func (c *CommitLog) updateHeader(row *Row) {
 			c.clHeader.turnOn(id, currentPos)
 			c.writeCommitLogHeaderB(c.clHeader.toByteArray(), true)
 		}
+	}
+}
+
+func (c *CommitLog) onMemtableFlush(cf string, cLogCtx *CommitLogContext) {
+	// Called on memtable flush to add to the commit log a token
+	// indicating that this column family has been flushed.
+	// The bit flag associated with this column family is set
+	// in the header and this is used to decide if the log
+	// file can be deleted.
+	table := openTable(c.table)
+	id := table.tableMetadata.cfIDMap[cf]
+	c.discard(cLogCtx, id)
+}
+
+// ByTime provide struct to sort file by timestamp
+type ByTime []string
+
+// Len implements the length of the slice
+func (a ByTime) Len() int {
+	return len(a)
+}
+
+// Less implements less comparator
+func (a ByTime) Less(i, j int) bool {
+	return getCreationTime(a[i]) < getCreationTime(a[j])
+}
+
+// Swap implements swap method
+func (a ByTime) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
+}
+
+func getCreationTime(name string) int64 {
+	arr := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '.'
+	})
+	num, err := strconv.ParseInt(arr[len(arr)-2], 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return num
+}
+
+func (c *CommitLog) discard(cLogCtx *CommitLogContext, id int) {
+	// Check if old commit logs can be deleted.
+	commitLogHeader, ok := clHeaders[cLogCtx.file]
+	if !ok {
+		if c.logFile == cLogCtx.file {
+			// we are dealing with the current commit log
+			commitLogHeader = c.clHeader
+			clHeaders[cLogCtx.file] = c.clHeader
+		} else {
+			return
+		}
+	}
+	//
+	commitLogHeader.turnOff(id)
+	oldFiles := make([]string, 0)
+	for key := range clHeaders {
+		oldFiles = append(oldFiles, key)
+	}
+	sort.Sort(ByTime(oldFiles))
+	listOfDeletedFiles := make([]string, 0)
+	// Loop through all the commit log files in the history.
+	// Process the files that are older than the one in the
+	// context. For each of these files the header needs to
+	// modified by performing a bitwise & of the header with
+	// the header of the file in the context. If we encounter
+	// file in the context in our list of old commit log files
+	// then we update the header and write it back to the commit
+	// log.
+	for _, oldFile := range oldFiles {
+		if oldFile == cLogCtx.file {
+			// Need to turn on again. Because we always keep
+			// the bit turned on and the position indicates
+			// from where the commit log needs to be read.
+			// When a flush occurs we turn off perform &
+			// operation and then turn on with the new position.
+			commitLogHeader.turnOn(id, cLogCtx.position)
+			c.writeCommitLogHeaderC(cLogCtx.file, commitLogHeader.toByteArray())
+			break
+		} else {
+			oldCommitLogHeader := clHeaders[oldFile]
+			oldCommitLogHeader.and(commitLogHeader)
+			if oldCommitLogHeader.isSafeToDelete() {
+				log.Printf("Deleting commit log: %v\n", oldFile)
+				err := os.Remove(oldFile)
+				if err != nil {
+					log.Fatal(err)
+				}
+				listOfDeletedFiles = append(listOfDeletedFiles, oldFile)
+			} else {
+				c.writeCommitLogHeaderC(oldFile, oldCommitLogHeader.toByteArray())
+			}
+		}
+	}
+	for _, deletedFile := range listOfDeletedFiles {
+		delete(clHeaders, deletedFile)
 	}
 }
