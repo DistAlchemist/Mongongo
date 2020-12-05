@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"log"
 	"os"
+	"sort"
 
 	"github.com/willf/bitset"
 
@@ -53,6 +54,7 @@ import (
 var (
 	// SSTableTmpFile is the tmp file name for sstable
 	SSTableTmpFile      = "tmp"
+	SSTVersion          = int64(0)
 	SSTIndexMetadataMap map[string][]*KeyPositionInfo
 	// every 128th key is an index
 	SSTIndexInterval = 128
@@ -80,15 +82,24 @@ type KeyPositionInfo struct {
 	position int64
 }
 
+// NewKeyPositionInfo ...
+func NewKeyPositionInfo(key string, position int64) *KeyPositionInfo {
+	k := &KeyPositionInfo{}
+	k.key = key
+	k.position = position
+	return k
+}
+
 // SSTable is the struct for SSTable
 type SSTable struct {
-	dataFileName     string
-	dataWriter       *os.File
-	blockIndex       map[string]*BlockMetadata
-	blockIndexes     []map[string]*BlockMetadata
-	lastWrittenKey   string
-	indexKeysWritten int
-	indexInterval    int
+	dataFileName       string
+	dataWriter         *os.File
+	blockIndex         map[string]*BlockMetadata
+	blockIndexes       []map[string]*BlockMetadata
+	lastWrittenKey     string
+	indexKeysWritten   int
+	indexInterval      int
+	firstBlockPosition int64
 }
 
 // NewSSTable initializes a SSTable
@@ -406,7 +417,167 @@ func (s *SSTable) append(key, hash string, buf []byte) {
 }
 
 func (s *SSTable) closeBF(bf *utils.BloomFilter) {
-	// TODO
+	// any remnants in the blockIndex should be added to the dump
+	s.blockIndexes = append(s.blockIndexes, s.blockIndex)
+	s.dumpBlockIndexes()
+	// serialize the bloom filter
+	buf := bf.ToByteArray()
+	s.closeByte(buf, len(buf))
+}
+
+func (s *SSTable) dumpBlockIndexes() {
+	position, err := s.dataWriter.Seek(0, 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.dataWriter.Seek(position, 0)
+	s.firstBlockPosition = position
+	for _, block := range s.blockIndexes {
+		s.dumpBlockIndex(block)
+	}
+}
+
+// ByKey ...
+type ByKey []string
+
+// Len ...
+func (p ByKey) Len() int {
+	return len(p)
+}
+
+// Less ...
+func (p ByKey) Less(i, j int) bool {
+	return p[i] < p[j]
+}
+
+// Swap ...
+func (p ByKey) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
+}
+
+func (s *SSTable) dumpBlockIndex(blockIndex map[string]*BlockMetadata) {
+	if len(blockIndex) == 0 {
+		return
+	}
+	// record the position where we start sriting the block index.
+	// this will be used as the position of the lastWrittenKey in
+	// the block in the index file.
+	position, err := s.dataWriter.Seek(0, 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	keys := make([]string, 0)
+	for key := range blockIndex {
+		keys = append(keys, key)
+	}
+	// String Sorted Table !
+	sort.Sort(ByKey(keys))
+	buf := make([]byte, 0)
+	// write number of keys in this block
+	b4 := make([]byte, 0)
+	binary.BigEndian.PutUint32(b4, uint32(len(keys)))
+	buf = append(buf, b4...)
+	// write key info
+	b8 := make([]byte, 8)
+	for _, key := range keys {
+		// write key string length
+		binary.BigEndian.PutUint32(b4, uint32(len(key)))
+		buf = append(buf, b4...)
+		// write key string bytes
+		buf = append(buf, []byte(key)...)
+		// write position of the key as a relative offset
+		blockMetadata := blockIndex[key]
+		binary.BigEndian.PutUint64(b8, uint64(position-blockMetadata.position))
+		buf = append(buf, b8...)
+		// write block metadata size
+		binary.BigEndian.PutUint64(b8, uint64(blockMetadata.size))
+		buf = append(buf, b8...)
+	}
+	// write out the block index
+	writeKV(s.dataWriter, SSTBlkIdxKey, buf)
+	// load this index into the inmemory index map
+	keyPositionInfos, ok := SSTIndexMetadataMap[s.dataFileName]
+	if !ok {
+		keyPositionInfos = make([]*KeyPositionInfo, 0)
+		SSTIndexMetadataMap[s.dataFileName] = keyPositionInfos
+	}
+	keyPositionInfos = append(keyPositionInfos, NewKeyPositionInfo(keys[0], position))
+}
+
+func writeKV(file *os.File, key string, buf []byte) {
+	length := len(buf)
+	// size allocated: int32 + key length + int32(data size) + data byte size
+	// write key length int32
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(len(key)))
+	file.Write(b4)
+	// write key bytes
+	file.Write([]byte(key))
+	// write data length
+	binary.BigEndian.PutUint32(b4, uint32(length))
+	file.Write(b4)
+	// write data bytes
+	file.Write(buf)
+	// flush writes
+	file.Sync()
+}
+
+func writeFooter(file *os.File, footer []byte, size int) {
+	// size if int32(marker length) + marker data + int32(data size) + data bytes
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(len(bfMarker)))
+	// write marker size
+	file.Write(b4)
+	// write marker bytes
+	file.Write([]byte(bfMarker))
+	// write footer size
+	binary.BigEndian.PutUint32(b4, uint32(size))
+	file.Write(b4)
+	// write footer bytes
+	file.Write(footer)
+}
+
+func (s *SSTable) closeByte(footer []byte, size int) {
+	// write the bloom filter for this SSTable
+	// then write three int64:
+	//  1. version
+	//  2. a pointer to the last written block index
+	//  3. position of the bloom filter
+	if s.dataWriter == nil {
+		return
+	}
+	bloomFilterPosition, err := s.dataWriter.Seek(0, 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	s.dataWriter.Seek(bloomFilterPosition, 0)
+	// write footer
+	writeFooter(s.dataWriter, footer, size)
+	// write version field
+	b8 := make([]byte, 8)
+	binary.BigEndian.PutUint64(b8, uint64(SSTVersion))
+	s.dataWriter.Write(b8)
+	// write relative position of the first block index from
+	// current position
+	currentPos := getCurrentPos(s.dataWriter)
+	blockPosition := currentPos - s.firstBlockPosition
+	binary.BigEndian.PutUint64(b8, uint64(blockPosition))
+	s.dataWriter.Write(b8)
+	// write the position of the bloom filter
+	bloomFilterRelativePosition := getCurrentPos(s.dataWriter) - bloomFilterPosition
+	binary.BigEndian.PutUint64(b8, uint64(bloomFilterRelativePosition))
+	s.dataWriter.Write(b8)
+	// flush to disk
+	s.dataWriter.Sync()
+}
+
+func getCurrentPos(file *os.File) int64 {
+	res, err := file.Seek(0, 0)
+	if err != nil {
+		log.Fatal(err)
+	}
+	file.Seek(res, 0)
+	return res
 }
 
 // BlockMetadata ...

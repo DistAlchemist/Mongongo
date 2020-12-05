@@ -197,5 +197,34 @@ func (c *ColumnFamilyStore) onMemtableFlush(cLogCtx *CommitLogContext) {
 }
 
 func (c *ColumnFamilyStore) storeLocation(filename string, bf *utils.BloomFilter) {
-	// TODO
+	// Called after the memtable flushes its inmemory data.
+	// This information is cached in the ColumnFamilyStore.
+	// This is useful for reads because the ColumnFamilyStore first
+	// looks in the inmemory store and then into the disk to find
+	// the key. If invoked during recoveryMode the onMemtableFlush()
+	// need not be invoked.
+	doCompaction := false
+	ssTableSize := 0
+	c.rwmu.Lock()
+	c.ssTables[filename] = true
+	storeBloomFilter(filename, bf)
+	ssTableSize = len(c.ssTables)
+	c.rwmu.Unlock()
+	if ssTableSize >= c.threshold && !c.isCompacting {
+		doCompaction = true
+	}
+	if c.isCompacting {
+		if ssTableSize%c.threshold == 0 {
+			doCompaction = true
+		}
+	}
+	if doCompaction {
+		log.Printf("Submitting for compaction...")
+		go c.doCompaction()
+	}
+
+}
+
+func storeBloomFilter(filename string, bf *utils.BloomFilter) {
+	SSTbfs[filename] = bf
 }

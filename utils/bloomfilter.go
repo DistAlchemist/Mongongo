@@ -6,6 +6,7 @@
 package utils
 
 import (
+	"encoding/binary"
 	"log"
 	"math/rand"
 	"time"
@@ -91,6 +92,28 @@ func (b *BloomFilter) IsPresent(key string) bool {
 		}
 	}
 	return res
+}
+
+// ToByteArray serializes this bf
+func (b *BloomFilter) ToByteArray() []byte {
+	buf := make([]byte, 0)
+	// write out the count of the bloom filter
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(b.count))
+	buf = append(buf, b4...)
+	// write the number of hash function used
+	binary.BigEndian.PutUint32(b4, uint32(b.hashes))
+	buf = append(buf, b4...)
+	// write the size of this bf
+	binary.BigEndian.PutUint32(b4, uint32(b.size))
+	buf = append(buf, b4...)
+	// write BitSet bytes
+	bs, err := b.filter.MarshalBinary()
+	if err != nil {
+		log.Print(err)
+	}
+	buf = append(buf, bs...)
+	return buf
 }
 
 // ISimpleHash provides an interface for hash functions
