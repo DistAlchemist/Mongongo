@@ -5,20 +5,35 @@
 
 package db
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"log"
+	"sync/atomic"
+)
 
 // SuperColumn implements IColumn interface
 type SuperColumn struct {
 	Name       string
 	Columns    map[string]IColumn
 	deleteMark bool
+	size       int32
+	Timestamp  int64
 }
 
 func (sc SuperColumn) addColumn(name string, column IColumn) {
-	if sc.Columns == nil {
-		sc.Columns = make(map[string]IColumn)
+	oldColumn, ok := sc.Columns[name]
+	if !ok {
+		sc.Columns[name] = column
+		atomic.AddInt32(&sc.size, column.getSize())
+	} else {
+		if oldColumn.timestamp() <= column.timestamp() {
+			sc.Columns[name] = column
+			delta := int32(-1 * oldColumn.getSize())
+			// subtruct the size of the oldColumn
+			atomic.AddInt32(&sc.size, delta)
+			atomic.AddInt32(&sc.size, int32(column.getSize()))
+		}
 	}
-	sc.Columns[name] = column
 }
 
 // NewSuperColumn constructs a SuperColun
@@ -27,12 +42,16 @@ func NewSuperColumn(name string) SuperColumn {
 	sc.Name = name
 	sc.Columns = make(map[string]IColumn)
 	sc.deleteMark = false
+	sc.size = 0
 	return sc
 }
 
 func (sc SuperColumn) getSize() int32 {
-	// TODO
-	return 0
+	return sc.size
+}
+
+func (sc SuperColumn) getObjectCount() int {
+	return 1 + len(sc.Columns)
 }
 
 func (sc SuperColumn) toByteArray() []byte {
@@ -79,4 +98,31 @@ func (sc SuperColumn) serializedSize() uint32 {
 	// 4 bytes: size of sub-columns
 	// # bytes: size of all sub-columns
 	return uint32(4+1+4+4+len(sc.Name)) + sc.getSizeOfAllColumns()
+}
+
+func (sc SuperColumn) timestamp() int64 {
+	return sc.Timestamp
+}
+
+func (sc SuperColumn) getName() string {
+	return sc.Name
+}
+
+func (sc SuperColumn) putColumn(column IColumn) bool {
+	_, ok := column.(SuperColumn)
+	if !ok {
+		log.Fatal("Only Super column objects should be put here")
+	}
+	if sc.Name != column.getName() {
+		log.Fatal("The name should match the name of the current super column")
+	}
+	columns := column.getSubColumns()
+	for name, subColumn := range columns {
+		sc.addColumn(name, subColumn)
+	}
+	return false
+}
+
+func (sc SuperColumn) getSubColumns() map[string]IColumn {
+	return sc.Columns
 }
