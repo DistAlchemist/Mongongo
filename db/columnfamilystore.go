@@ -187,5 +187,10 @@ func (c *ColumnFamilyStore) getNextFileName() string {
 }
 
 func (c *ColumnFamilyStore) onMemtableFlush(cLogCtx *CommitLogContext) {
-	// TODO
+	// Called when the memtable is frozen and ready to be flushed
+	// to disk. This method informs the commitlog that a particular
+	// columnFamily is being flushed to disk.
+	if cLogCtx.isValidContext() {
+		openCommitLog(c.tableName).onMemtableFlush(c.columnFamilyName, cLogCtx)
+	}
 }

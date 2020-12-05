@@ -45,6 +45,27 @@ func (c *CommitLogHeader) turnOn(idx int, position int64) {
 	c.position[idx] = int(position)
 }
 
+func (c *CommitLogHeader) turnOff(idx int) {
+	c.header[idx] = byte(0)
+	c.position[idx] = 0
+}
+
+func (c *CommitLogHeader) and(commitLogHeader *CommitLogHeader) {
+	clh2 := commitLogHeader.header
+	for i := 0; i < len(c.header); i++ {
+		c.header[i] = c.header[i] & clh2[i]
+	}
+}
+
+func (c *CommitLogHeader) isSafeToDelete() bool {
+	for _, b := range c.header {
+		if b == 1 {
+			return false
+		}
+	}
+	return true
+}
+
 func (c *CommitLogHeader) toByteArray() []byte {
 	// of the format:
 	//  headerByteLength: uint32

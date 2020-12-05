@@ -129,10 +129,10 @@ func (t *Table) apply(row *Row) {
 	key := row.key
 	// add row to commit log
 	start := time.Now().UnixNano() / int64(time.Millisecond)
-	cLogCtx := openCommitLog(t.tableName).add(row)
+	cLogCtx := openCommitLog(t.tableName).add(row) // first write to commitlog
 	for cName, columnFamily := range row.columnFamilies {
 		cfStore := t.columnFamilyStores[cName]
-		cfStore.apply(key, columnFamily, cLogCtx)
+		cfStore.apply(key, columnFamily, cLogCtx) // then write to memtable
 	}
 	row.clear()
 	timeTaken := time.Now().UnixNano()/int64(time.Millisecond) - start

@@ -54,6 +54,7 @@ func NewMemtable(table, cfName string) *Memtable {
 // flush memtable to disk when the size exceeds the threshold
 func (m *Memtable) put(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
 	if m.isThresholdViolated(key) {
+		// flush memtable to disk as SSTable if size excedes the limit
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		cfStore := openTable(m.tableName).columnFamilyStores[m.cfName]
