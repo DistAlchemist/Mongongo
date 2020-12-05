@@ -93,3 +93,7 @@ func (cf *ColumnFamily) getColumnCount() int {
 func (cf *ColumnFamily) addColumns(columnFamily *ColumnFamily) {
 	// TODO
 }
+
+func (cf *ColumnFamily) clear() {
+	cf.Columns = make(map[string]IColumn)
+}

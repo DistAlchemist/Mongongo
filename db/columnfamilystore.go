@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 
 	"github.com/DistAlchemist/Mongongo/config"
+	"github.com/DistAlchemist/Mongongo/utils"
 )
 
 // ColumnFamilyStore provides storage specification of
@@ -193,4 +194,8 @@ func (c *ColumnFamilyStore) onMemtableFlush(cLogCtx *CommitLogContext) {
 	if cLogCtx.isValidContext() {
 		openCommitLog(c.tableName).onMemtableFlush(c.columnFamilyName, cLogCtx)
 	}
+}
+
+func (c *ColumnFamilyStore) storeLocation(filename string, bf *utils.BloomFilter) {
+	// TODO
 }

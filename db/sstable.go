@@ -59,7 +59,7 @@ var (
 	// key associated with block index written to disk
 	SSTBlockIndexKey = "BLOCK-INDEX"
 	// position in SSTable after the first Block Index
-	SSTPositionAfterFirstBlockIndex = 0
+	SSTPositionAfterFirstBlockIndex = int64(0)
 	// this map has the SSTable as key and a BloomFilter
 	// as value. This BloomFilter will tell us if a key/
 	// column pair is in the SSTable. If not, we can avoid
@@ -82,15 +82,21 @@ type KeyPositionInfo struct {
 
 // SSTable is the struct for SSTable
 type SSTable struct {
-	dataFileName string
-	dataWriter   *os.File
-	blockIndex   map[string]*BlockMetadata
-	blockIndexes []map[string]*BlockMetadata
+	dataFileName     string
+	dataWriter       *os.File
+	blockIndex       map[string]*BlockMetadata
+	blockIndexes     []map[string]*BlockMetadata
+	lastWrittenKey   string
+	indexKeysWritten int
+	indexInterval    int
 }
 
 // NewSSTable initializes a SSTable
 func NewSSTable(filename string) *SSTable {
 	s := &SSTable{}
+	s.indexKeysWritten = 0
+	s.lastWrittenKey = ""
+	s.indexInterval = 128
 	// filename of the type:
 	//  var/storage/data/<tableName>-<columnFamilyName>-<index>-Data.db
 	s.dataFileName = filename
@@ -347,8 +353,72 @@ func (s *SSTable) initBlockIndex(pType string) {
 	}
 }
 
+func (s *SSTable) beforeAppend(hash string) int64 {
+	if hash == "" {
+		log.Fatal("hash value shouldn't be empty")
+	}
+	if s.lastWrittenKey != "" {
+		previousKey := s.lastWrittenKey
+		if hash < previousKey {
+			log.Printf("Last written key: %v\n", previousKey)
+			log.Printf("Current key: %v\n", hash)
+			log.Printf("Writing into file: %v\n", s.dataFileName)
+			log.Fatal("Keys must be written in ascending order.")
+		}
+	}
+	currentPos := SSTPositionAfterFirstBlockIndex
+	if s.lastWrittenKey != "" {
+		currentPos, err := s.dataWriter.Seek(0, 0)
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.dataWriter.Seek(currentPos, 0)
+	}
+	return currentPos
+}
+
+func (s *SSTable) afterAppend(hash string, position, size int64) {
+	s.indexKeysWritten++
+	key := hash
+	s.lastWrittenKey = key
+	s.blockIndex[key] = NewBlockMetadata(position, size)
+	if s.indexKeysWritten == s.indexInterval {
+		s.blockIndexes = append(s.blockIndexes, s.blockIndex)
+		s.initBlockIndex(config.HashingStrategy)
+		s.indexKeysWritten = 0
+	}
+}
+
+func (s *SSTable) append(key, hash string, buf []byte) {
+	currentPos := s.beforeAppend(hash)
+	str := hash + ":" + key
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(len(str)))
+	// write string length
+	s.dataWriter.Write(b4)
+	// write string bytes
+	s.dataWriter.WriteString(str)
+	binary.BigEndian.PutUint32(b4, uint32(len(buf)))
+	// write byte slice lengh
+	s.dataWriter.Write(b4)
+	s.dataWriter.Write(buf)
+	s.afterAppend(hash, currentPos, int64(len(buf)))
+}
+
+func (s *SSTable) closeBF(bf *utils.BloomFilter) {
+	// TODO
+}
+
 // BlockMetadata ...
 type BlockMetadata struct {
 	position int64
 	size     int64
+}
+
+// NewBlockMetadata ...
+func NewBlockMetadata(position, size int64) *BlockMetadata {
+	b := &BlockMetadata{}
+	b.position = position
+	b.size = size
+	return b
 }
