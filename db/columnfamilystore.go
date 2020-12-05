@@ -175,7 +175,15 @@ func (c *ColumnFamilyStore) apply(key string, columnFamily *ColumnFamily, cLogCt
 }
 
 func (c *ColumnFamilyStore) switchMemtable(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
-	// TODO
+	// Used on start up when we are recovering from logs
+	c.memtable.mu.Lock()
+	c.memtable = NewMemtable(c.tableName, c.columnFamilyName)
+	c.memtable.mu.Unlock()
+	if key != c.memtable.flushKey {
+		c.memtable.mu.Lock()
+		c.memtable.put(key, columnFamily, cLogCtx)
+		c.memtable.mu.Unlock()
+	}
 }
 
 func (c *ColumnFamilyStore) getNextFileName() string {
