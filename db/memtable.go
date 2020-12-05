@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/DistAlchemist/Mongongo/config"
+	"github.com/DistAlchemist/Mongongo/utils"
 )
 
 // Memtable specifies memtable
@@ -135,5 +136,26 @@ func (m *Memtable) flushForOrderPreservingPartitioner(ssTable *SSTable, cfStore 
 }
 
 func (m *Memtable) flushForRandomPartitioner(ssTable *SSTable, cfStore *ColumnFamilyStore, cLogCtx *CommitLogContext) {
-	// TODO
+	keys := make([]string, 0)
+	for key := range m.columnFamilies {
+		keys = append(keys, key)
+	}
+	// create list of primary keys in sorted order
+	pKeys := createPrimaryKeys(keys)
+	// use this bloom filter to decide if a key exists in a SSTable
+	bf := utils.NewBloomFilter(len(keys), 15)
+	for _, pKey := range pKeys {
+		columnFamily, ok := m.columnFamilies[pKey.key]
+		if !ok {
+			// serialize the cf with column indexes
+			buf := columnFamily.toByteArray()
+			// write the key and value to disk
+			ssTable.append(pKey.key, pKey.hash, buf)
+			bf.Fill(pKey.key)
+			columnFamily.clear()
+		}
+	}
+	ssTable.closeBF(bf)
+	cfStore.onMemtableFlush(cLogCtx)
+	cfStore.storeLocation(ssTable.dataFileName, bf)
 }
