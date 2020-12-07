@@ -132,7 +132,7 @@ func (m *Memtable) flush(cLogCtx *CommitLogContext) {
 }
 
 func (m *Memtable) flushForOrderPreservingPartitioner(ssTable *SSTable, cfStore *ColumnFamilyStore, cLogCtx *CommitLogContext) {
-	// TODO
+	// TODO I reckon that I am not going to do it :)
 }
 
 func (m *Memtable) flushForRandomPartitioner(ssTable *SSTable, cfStore *ColumnFamilyStore, cLogCtx *CommitLogContext) {

@@ -167,3 +167,9 @@ func GetColumnType(cfName string) string {
 	}
 	return cfMetadata.ColumnType
 }
+
+// GetCompactionFileLocation ...
+func GetCompactionFileLocation(expectedCompactedFileSize int64) string {
+	// TODO
+	return ""
+}

@@ -52,5 +52,5 @@ func (r *Row) toByteArray() []byte {
 }
 
 func (r *Row) clear() {
-	// TODO
+	r.columnFamilies = make(map[string]*ColumnFamily)
 }

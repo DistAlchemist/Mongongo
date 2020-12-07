@@ -63,15 +63,6 @@ func (c Column) diff(column Column) Column {
 func getObjectCount() int {
 	return 1
 }
-func (c Column) putColumn(column Column) bool {
-	if c.Name != column.Name {
-		log.Printf("The name should match the name of the current column or super column")
-	}
-	if c.Timestamp <= column.Timestamp {
-		return true
-	}
-	return false
-}
 
 func (c Column) toString() string {
 	var buffer bytes.Buffer
@@ -140,4 +131,38 @@ func (c Column) serializedSize() uint32 {
 	// 4 bytes: length of value
 	// # bytes: value bytes
 	return uint32(4 + 1 + 8 + 4 + len(c.Name) + len(c.Value))
+}
+
+func (c Column) getObjectCount() int {
+	return 1
+}
+
+func (c Column) timestamp() int64 {
+	return c.Timestamp
+}
+
+func (c Column) putColumn(column IColumn) bool {
+	// resolve the column by comparing timestamps.
+	// if a newer value is being put, take the change.
+	// else ignore.
+	_, ok := column.(Column)
+	if !ok {
+		log.Fatal("Only Column objects should be put here")
+	}
+	if c.Name != column.getName() {
+		log.Fatal("The name should match the name of the current column")
+	}
+	if c.Timestamp <= column.timestamp() {
+		return true
+	}
+	return false
+}
+
+func (c Column) getName() string {
+	return c.Name
+}
+
+func (c Column) getSubColumns() map[string]IColumn {
+	log.Fatal("This operation is not supported on simple columns")
+	return nil
 }

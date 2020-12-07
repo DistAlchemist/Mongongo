@@ -8,6 +8,8 @@ package db
 import (
 	"encoding/binary"
 	"sync/atomic"
+
+	"github.com/DistAlchemist/Mongongo/config"
 )
 
 // ColumnFamily definition
@@ -41,11 +43,25 @@ func (cf *ColumnFamily) CreateColumn(columnName, value string, timestamp int64) 
 	cf.addColumn(columnName, column)
 }
 
-func (cf *ColumnFamily) addColumn(columnName string, column IColumn) {
-	if cf.Columns == nil {
-		cf.Columns = make(map[string]IColumn)
+func (cf *ColumnFamily) addColumn(name string, column IColumn) {
+	newSize := int32(0)
+	oldColumn, ok := cf.Columns[name]
+	if !ok {
+		oldSize := oldColumn.getSize()
+		if oldColumn.putColumn(column) {
+			// This will never be called for super column as put column
+			// always returns false
+			cf.Columns[name] = column
+			newSize = column.getSize()
+		} else {
+			newSize = oldColumn.getSize()
+		}
+		atomic.AddInt32(&cf.size, int32(newSize-oldSize))
+	} else {
+		newSize = column.getSize()
+		atomic.AddInt32(&cf.size, newSize)
+		cf.Columns[name] = column
 	}
-	cf.Columns[columnName] = column
 }
 
 func (cf *ColumnFamily) getSize() int32 {
@@ -86,12 +102,25 @@ func (cf *ColumnFamily) toByteArray() []byte {
 }
 
 func (cf *ColumnFamily) getColumnCount() int {
-	// TODO
-	return 0
+	count := 0
+	columns := cf.Columns
+	if columns != nil {
+		if config.GetColumnType(cf.ColumnFamilyName) != "Super" {
+			count = len(columns)
+		} else {
+			for _, column := range columns {
+				count += column.getObjectCount()
+			}
+		}
+	}
+	return count
 }
 
 func (cf *ColumnFamily) addColumns(columnFamily *ColumnFamily) {
-	// TODO
+	columns := cf.Columns
+	for cName, column := range columns {
+		cf.addColumn(cName, column)
+	}
 }
 
 func (cf *ColumnFamily) clear() {
