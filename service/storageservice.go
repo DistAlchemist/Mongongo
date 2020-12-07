@@ -131,7 +131,7 @@ func (ss *StorageService) Start() {
 	ss.storageMetadata = db.GetManagerInstance().Start()
 	// _ = db.GetManagerInstance().Start()
 	ss.startStorageServer()
-	ss.startControlServer()
+	// ss.startControlServer()
 	ss.storageLoadBalancer.start()
 	gms.GetGossiper().Register(ss)
 	gms.GetGossiper().Start(ss.storageMetadata.GetGeneration())

@@ -322,7 +322,7 @@ func onSSTableStart(filenames []string) {
 }
 
 func (s *SSTable) close() {
-	// TODO
+	s.closeByte(make([]byte, 0), 0)
 }
 
 // TouchKeyCache implements LRU cache
