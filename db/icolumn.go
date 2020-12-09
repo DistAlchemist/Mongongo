@@ -5,9 +5,13 @@
 
 package db
 
+import (
+	"os"
+)
+
 // IColumn provide interface for Column and SuperColumn
 type IColumn interface {
-	addColumn(name string, column IColumn)
+	addColumn(column IColumn)
 	getName() string
 	getSize() int32
 	toByteArray() []byte
@@ -16,4 +20,15 @@ type IColumn interface {
 	timestamp() int64
 	putColumn(IColumn) bool
 	getSubColumns() map[string]IColumn
+	isMarkedForDelete() bool
+	getValue() []byte
+	getMarkedForDeleteAt() int64
+	getLocalDeletionTime() int
+}
+
+// IColumnSerializer ...
+type IColumnSerializer interface {
+	serialize(column IColumn, dos *os.File)
+	serializeB(column IColumn, dos []byte)
+	deserialize(dis *os.File) IColumn
 }

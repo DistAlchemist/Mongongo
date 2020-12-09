@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"log"
+	"os"
 	"strconv"
 )
 
@@ -21,8 +22,27 @@ type Column struct {
 	deleteMark bool
 }
 
-func (c Column) addColumn(name string, column IColumn) {
+func (c Column) addColumn(column IColumn) {
 	log.Printf("Invalid method: Column doesn't support addColumn\n")
+}
+
+func (c Column) getMarkedForDeleteAt() int64 {
+	if c.isMarkedForDelete() == false {
+		log.Fatal("column is not marked for delete")
+	}
+	return c.Timestamp
+}
+
+func (c Column) getLocalDeletionTime() int {
+	return 0 // miao miao miao ?
+}
+
+func (c Column) isMarkedForDelete() bool {
+	return c.deleteMark
+}
+
+func (c Column) getValue() []byte {
+	return []byte(c.Value)
 }
 
 func (c Column) getSize() int32 {
@@ -88,12 +108,12 @@ func (c Column) digest() string {
 }
 
 // NewColumn constructs a Column
-func NewColumn(name, value string, timestamp int64) Column {
+func NewColumn(name, value string, timestamp int64, deleteMark bool) Column {
 	c := Column{}
 	c.Name = name
 	c.Value = value
 	c.Timestamp = timestamp
-	c.deleteMark = false
+	c.deleteMark = deleteMark
 	return c
 }
 
@@ -141,6 +161,17 @@ func (c Column) timestamp() int64 {
 	return c.Timestamp
 }
 
+func (c Column) comparePriority(o Column) int64 {
+	if c.isMarkedForDelete() {
+		// tombstone always wins ties
+		if c.Timestamp < o.Timestamp {
+			return -1
+		}
+		return 1
+	}
+	return c.Timestamp - o.Timestamp
+}
+
 func (c Column) putColumn(column IColumn) bool {
 	// resolve the column by comparing timestamps.
 	// if a newer value is being put, take the change.
@@ -165,4 +196,37 @@ func (c Column) getName() string {
 func (c Column) getSubColumns() map[string]IColumn {
 	log.Fatal("This operation is not supported on simple columns")
 	return nil
+}
+
+// CSerializer ...
+var CSerializer = NewColumnSerializer()
+
+// ColumnSerializer ...
+type ColumnSerializer struct{}
+
+// NewColumnSerializer ...
+func NewColumnSerializer() *ColumnSerializer {
+	return &ColumnSerializer{}
+}
+
+func (c *ColumnSerializer) serialize(column IColumn, dos *os.File) {
+	writeString(dos, column.getName())
+	writeBool(dos, column.isMarkedForDelete())
+	writeInt64(dos, column.timestamp())
+	writeBytes(dos, column.getValue()) // will first write byte length, the bytes
+}
+
+func (c *ColumnSerializer) serializeB(column IColumn, dos []byte) {
+	writeStringB(dos, column.getName())
+	writeBoolB(dos, column.isMarkedForDelete())
+	writeInt64B(dos, column.timestamp())
+	writeBytesB(dos, column.getValue()) // will first write byte length, the bytes
+}
+
+func (c *ColumnSerializer) deserialize(dis *os.File) IColumn {
+	name, _ := readString(dis)
+	deleteMark, _ := readBool(dis)
+	timestamp := readInt64(dis)
+	value, _ := readBytes(dis)
+	return NewColumn(name, string(value), timestamp, deleteMark)
 }

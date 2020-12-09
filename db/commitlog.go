@@ -200,6 +200,8 @@ func (c *CommitLog) add(row *Row) *CommitLogContext {
 	return cLogCtx
 }
 
+// writeString will first write string length(int32)
+// and then write string in bytes
 func writeString(file *os.File, s string) int {
 	// write string length
 	b4 := make([]byte, 4)
@@ -210,6 +212,70 @@ func writeString(file *os.File, s string) int {
 	// return total bytes written
 	return 4 + len(s)
 }
+func writeStringB(file []byte, s string) int {
+	// write string length
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(len(s)))
+	file = append(file, b4...)
+	// write string bytes
+	file = append(file, []byte(s)...)
+	// return total bytes written
+	return 4 + len(s)
+}
+
+func writeInt(file *os.File, num int) int {
+	return writeInt32(file, int32(num))
+}
+
+func writeIntB(buf []byte, num int) int {
+	return writeInt32B(buf, int32(num))
+}
+
+func writeInt32(file *os.File, num int32) int {
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(num))
+	file.Write(b4)
+	return 4
+}
+
+func writeInt32B(buf []byte, num int32) int {
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(num))
+	buf = append(buf, b4...)
+	return 4
+}
+
+func writeInt64(file *os.File, num int64) int {
+	b8 := make([]byte, 8)
+	binary.BigEndian.PutUint64(b8, uint64(num))
+	file.Write(b8)
+	return 8
+}
+
+func writeInt64B(buf []byte, num int64) int {
+	b8 := make([]byte, 8)
+	binary.BigEndian.PutUint64(b8, uint64(num))
+	buf = append(buf, b8...)
+	return 8
+}
+
+func writeBool(file *os.File, b bool) int {
+	if b == true {
+		file.Write([]byte{1})
+	} else {
+		file.Write([]byte{0})
+	}
+	return 1
+}
+
+func writeBoolB(file []byte, b bool) int {
+	if b == true {
+		file = append(file, byte(1))
+	} else {
+		file = append(file, byte(0))
+	}
+	return 1
+}
 
 func writeBytes(file *os.File, b []byte) int {
 	// write byte length
@@ -218,6 +284,17 @@ func writeBytes(file *os.File, b []byte) int {
 	file.Write(b4)
 	// write bytes
 	file.Write(b)
+	// return total bytes written
+	return 4 + len(b)
+}
+
+func writeBytesB(buf []byte, b []byte) int {
+	// write byte length
+	b4 := make([]byte, 4)
+	binary.BigEndian.PutUint32(b4, uint32(len(b)))
+	buf = append(buf, b4...)
+	// write bytes
+	buf = append(buf, b...)
 	// return total bytes written
 	return 4 + len(b)
 }

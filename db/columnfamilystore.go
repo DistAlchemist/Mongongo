@@ -11,6 +11,7 @@ package db
 import (
 	"container/heap"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
@@ -21,6 +22,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/dht"
@@ -41,27 +43,30 @@ type ColumnFamilyStore struct {
 	memtable       *Memtable
 	binaryMemtable *BinaryMemtable
 	// SSTable on disk for this cf
-	ssTables map[string]bool
+	// ssTables map[string]bool
+	ssTables map[string]*SSTableReader
 	// modification lock used for protecting reads
 	// from compactions
 	rwmu sync.RWMutex
 	// flag indicates if a compaction is in process
 	isCompacting bool
+	isSuper      bool
 }
 
 // NewColumnFamilyStore initializes a new ColumnFamilyStore
-func NewColumnFamilyStore(table, cfName string) *ColumnFamilyStore {
+func NewColumnFamilyStore(table, columnFamily string) *ColumnFamilyStore {
 	c := &ColumnFamilyStore{}
 	c.threshold = 4
 	c.bufSize = 128 * 1024 * 1024
 	c.compactionMemoryThres = 1 << 30
 	c.tableName = table
-	c.columnFamilyName = cfName
+	c.columnFamilyName = columnFamily
 	c.fileIdxGenerator = 0
-	c.ssTables = make(map[string]bool)
+	c.ssTables = make(map[string]*SSTableReader)
 	c.isCompacting = false
+	c.isSuper = config.GetColumnTypeTableName(table, columnFamily) == "Super"
 	// Get all data files associated with old Memtables for this table.
-	// The names are <Table>-<CfName>-1.db, ..., <Table>-<CfName>-n.db.
+	// The names are <CfName>-<index>-Data.db, ...
 	// The max is n and increment it to be used as the next index.
 	indices := make([]int, 0)
 	dataFileDirs := config.DataFileDirs
@@ -71,11 +76,11 @@ func NewColumnFamilyStore(table, cfName string) *ColumnFamilyStore {
 			log.Fatal(err)
 		}
 		for _, fileInfo := range files {
-			filename := fileInfo.Name()
-			tblCfName := getTableAndColumnFamilyName(filename)
-			if tblCfName[0] == table && tblCfName[0] == cfName {
-				idx := getIdxFromFileName(filename)
-				indices = append(indices, idx)
+			filename := fileInfo.Name() // base name <cf>-<index>-Data.db
+			cfName := getColumnFamilyFromFileName(filename)
+			if cfName == columnFamily {
+				index := getIndexFromFileName(filename)
+				indices = append(indices, index)
 			}
 		}
 	}
@@ -86,16 +91,16 @@ func NewColumnFamilyStore(table, cfName string) *ColumnFamilyStore {
 		value = indices[sz-1]
 	}
 	atomic.StoreInt32(&c.fileIdxGenerator, int32(value))
-	c.memtable = NewMemtable(table, cfName)
-	c.binaryMemtable = NewBinaryMemtable(table, cfName)
+	c.memtable = NewMemtable(table, columnFamily)
+	c.binaryMemtable = NewBinaryMemtable(table, columnFamily)
 	return c
 }
 
-func getTableAndColumnFamilyName(filename string) []string {
-	// filename is of format:
-	//   <table>-<column family>-<index>-Data.db
+func getColumnFamilyFromFileName(filename string) string {
+	// filename is of format
+	//  <cf>-<index>-Data.db
 	values := strings.Split(filename, "-")
-	return values[:2] // tableName and cfName
+	return values[0]
 }
 
 func getIdxFromFileName(filename string) int {
@@ -128,17 +133,17 @@ func (f fileInfoList) Swap(i, j int) {
 }
 
 func (c *ColumnFamilyStore) onStart() {
-	// do major compaction
+	// scan for data files corresponding to this cf
 	ssTables := make([]os.FileInfo, 0)
-	dataFileDirs := config.DataFileDirs
-	filenames := make([]string, 0)
+	dataFileDirs := config.GetAllDataFileLocationsForTable(c.tableName)
+	filenames := make(map[string]string) // map to full name with dir
 	for _, dir := range dataFileDirs {
 		files, err := ioutil.ReadDir(dir)
 		if err != nil {
 			log.Fatal(err)
 		}
 		for _, fileInfo := range files {
-			filename := fileInfo.Name()
+			filename := fileInfo.Name() // name from FileInfo is always base name
 			if strings.Contains(filename, c.columnFamilyName) &&
 				(fileInfo.Size() == 0 || strings.Contains(filename, SSTableTmpFile)) {
 				err := os.Remove(path.Join(dir, filename))
@@ -147,26 +152,29 @@ func (c *ColumnFamilyStore) onStart() {
 				}
 				continue
 			}
-			tblCfName := getTableAndColumnFamilyName(filename)
-			if tblCfName[0] == c.tableName && tblCfName[1] == c.columnFamilyName &&
-				strings.Contains(filename, "-Data.db") {
+			cfName := getColumnFamilyFromFileName(filename)
+			if cfName == c.columnFamilyName && strings.Contains(filename, "-Data.db") {
 				ssTables = append(ssTables, fileInfo)
-				filenames = append(filenames, path.Join(dir, fileInfo.Name()))
+				// full path: var/storage/data/tablename/<cf>-<index>-Data.db
+				filenames[filename] = path.Join(dir, filename)
 			}
 		}
 	}
-	// sort.Sort(fileInfoList(ssTables))
+	sort.Sort(fileInfoList(ssTables)) // sort by modification time from old to new
+	// filename of the type:
+	//  var/storage/data/<columnFamilyName>-<index>-Data.db
+	for _, file := range ssTables {
+		filename := filenames[file.Name()] // full name with dir path
+		sstable := openSSTableReader(filename)
+		c.ssTables[filename] = sstable
+	}
 	// filenames := make([]string, len(ssTables))
 	// for _, ssTable := range ssTables {
 	// 	filenames = append(filenames, ssTable.Name())
 	// }
-	// filename of the type:
-	//  var/storage/data/<tableName>-<columnFamilyName>-<index>-Data.db
-	for _, filename := range filenames {
-		c.ssTables[filename] = true
-	}
-	onSSTableStart(filenames)
+	// onSSTableStart(filenames)
 	log.Println("Submitting a major compaction task")
+	// submit initial check-for-compaction request
 	go c.doCompaction()
 	// TODO should also submit periodic minor compaction
 }
@@ -235,7 +243,7 @@ func (p ByFileName) Swap(i, j int) {
 }
 
 func getIndexFromFileName(filename string) int {
-	// filename is of form <table>-<column family>-<index>-Data.db
+	// filename is of form <column family>-<index>-Data.db
 	tokens := strings.Split(filename, "-")
 	res, err := strconv.Atoi(tokens[len(tokens)-2])
 	if err != nil {
@@ -245,13 +253,39 @@ func getIndexFromFileName(filename string) int {
 }
 
 func getExpectedCompactedFileSize(files []string) int64 {
-	// TODO
-	return 0
+	// calculate total size of compacted files
+	expectedFileSize := int64(0)
+	for _, file := range files {
+		f, err := os.Open(file)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fileInfo, err := f.Stat()
+		if err != nil {
+			log.Fatal(err)
+		}
+		size := fileInfo.Size()
+		expectedFileSize += size
+	}
+	return expectedFileSize
 }
 
 func getMaxSizeFile(files []string) string {
-	// TODO
-	return ""
+	maxSize := int64(0)
+	maxFile := ""
+	for _, file := range files {
+		f, err := os.Open(file)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fileInfo, err := f.Stat()
+		size := fileInfo.Size()
+		if size > maxSize {
+			maxSize = size
+			maxFile = f.Name()
+		}
+	}
+	return maxFile
 }
 
 func removeFromList(files []string, file string) {
@@ -277,10 +311,10 @@ func (pq FPQ) Len() int {
 func (pq FPQ) Less(i, j int) bool {
 	switch config.HashingStrategy {
 	case config.Ophf:
-		return pq[i].key < pq[j].key
+		return pq[i].row.key < pq[j].row.key
 	default:
-		lhs := strings.Split(pq[i].key, ":")[0]
-		rhs := strings.Split(pq[j].key, ":")[0]
+		lhs := strings.Split(pq[i].row.key, ":")[0]
+		rhs := strings.Split(pq[j].row.key, ":")[0]
 		return lhs < rhs
 	}
 }
@@ -314,16 +348,10 @@ func (c *ColumnFamilyStore) initPriorityQueue(files []string, ranges []*dht.Rang
 			bufferSize = minBufferSize
 		}
 		for _, file := range files {
-			fs := &FileStruct{}
-			fs.key = ""
-			reader, err := os.Open(file)
-			fs.reader = reader
-			fs.buf = make([]byte, 0)
-			if err != nil {
-				log.Fatal(err)
-			}
-			fs = getNextKey(fs)
-			if fs == nil {
+			sstableReader, _ := openedFiles.get(file)
+			fs := sstableReader.getFileStruct()
+			fs.advance(true)
+			if fs.isExhausted() {
 				continue
 			}
 			heap.Push(pq, fs)
@@ -332,23 +360,19 @@ func (c *ColumnFamilyStore) initPriorityQueue(files []string, ranges []*dht.Rang
 	return pq
 }
 
-func getNextKey(fs *FileStruct) *FileStruct {
-	// Read the next key from the data file, this function will
-	// skip then block index and read the next available key into
-	// the filestruct that is passed. If it cannot read or a end
-	// of file is reached it will return nil.
-	_, key, ok := readKV(fs.reader, fs.buf)
-	if !ok {
-		fs.reader.Close()
-		return nil
-	}
-	fs.key = key
-	if fs.key == SSTBlkIdxKey {
-		fs.reader.Close()
-		return nil
-	}
-	return fs
-}
+// func getNextKey(fs *FileStruct, materialize bool) *FileStruct {
+// 	// Read the next key from the data file, this function will
+// 	// skip then block index and read the next available key into
+// 	// the filestruct that is passed. If it cannot read or a end
+// 	// of file is reached it will return nil.
+// 	_, key, ok := readKV(fs.reader, fs.buf)
+// 	if !ok {
+// 		fs.reader.Close()
+// 		return nil
+// 	}
+// 	fs.key = key
+// 	return fs
+// }
 
 func readKV(file *os.File, buf []byte) (int, string, bool) {
 	// read key length
@@ -379,73 +403,217 @@ func readKV(file *os.File, buf []byte) (int, string, bool) {
 	return 4 + 4 + keySize + valueSize, key, true
 }
 
-func (c *ColumnFamilyStore) getTmpFileName(files []string) string {
-	// TODO
-	return ""
+func (c *ColumnFamilyStore) getTmpFileName() string {
+	atomic.AddInt32(&c.fileIdxGenerator, 1)
+	res := fmt.Sprintf("%v-%v-%v-Data.db", c.columnFamilyName, SSTableTmpFile, c.fileIdxGenerator)
+	return res
 }
 
 func getApproximateKeyCount(files []string) int {
-	// TODO
-	return 0
+	count := 0
+	for _, dataFileName := range files {
+		sstable, _ := openedFiles.get(dataFileName)
+		indexKeyCount := len(sstable.getIndexPositions())
+		count += (indexKeyCount + 1) * SSTIndexInterval
+	}
+	return count
 }
 
-func (c *ColumnFamilyStore) doFileCompaction(files []string, minBufferSize int) {
-	// TODO
-	// newfile := ""
-	// startTime := time.Now().UnixNano() / int64(time.Millisecond)
-	// totalBytesRead := int64(0)
-	// totalByteWritten := int64(0)
-	// totalkeysRead := int64(0)
-	// totalkeysWritten := int64(0)
-	// // calculate the expected compacted filesize
-	// expectedCompactedFileSize := getExpectedCompactedFileSize(files)
-	// compactionFileLocation := config.GetCompactionFileLocation(expectedCompactedFileSize)
-	// // if the compaction file path is empty, that
-	// // means we have no space left for this compaction
-	// if compactionFileLocation == "" {
-	// 	maxFile := getMaxSizeFile(files)
-	// 	removeFromList(files, maxFile)
-	// 	c.doFileCompaction(files, minBufferSize)
-	// 	return
-	// }
-	// pq := c.initPriorityQueue(files, nil, minBufferSize)
-	// if pq.Len() > 0 {
-	// 	mergedFileName := c.getTmpFileName(files)
-	// 	lastkey := ""
-	// 	lfs := make([]*FileStruct, 0)
-	// 	expectedBloomFilterSize := getApproximateKeyCount(files)
-	// 	if expectedBloomFilterSize <= 0 {
-	// 		expectedBloomFilterSize = SSTIndexInterval
-	// 	}
-	// 	log.Printf("Expeected bloom filter size: %v\n", expectedBloomFilterSize)
-	// 	// create the bloom filter for the compacted file
-	// 	compactedBloomFilter := utils.NewBloomFilter(expectedBloomFilterSize, 15)
-	// 	columnFamilies := make([]*ColumnFamily, 0)
-	// 	for pq.Len() > 0 || len(lfs) > 0 {
-	// 		var fs *FileStruct
-	// 		if pq.Len() > 0 {
-	// 			fs = pq.Pop().(*FileStruct)
-	// 		}
-	// 		if fs != nil && (lastkey == "" || lastkey == fs.key) {
-	// 			// The keys are the same so we need to add this to
-	// 			// the lfs list
-	// 			lastkey = fs.key
-	// 			lfs = append(lfs, fs)
-	// 		} else {
-	// 			sort.Sort(ByName(lfs))
-	// 			var columnFamily *ColumnFamily
-	// 			if len(lfs) > 1 {
-	// 				for _, filestruct := range lfs {
-	// 					// read the length although we don't need it
-	// 					r := bytes.NewReader(filestruct.buf)
-	// 					readInt(r)
-	// 					// TODO
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// }
+// merge all columnFamilies into a single instance, with only
+// the newest versions of columns preserved.
+func resolve(columnFamilies []*ColumnFamily) *ColumnFamily {
+	size := len(columnFamilies)
+	if size == 0 {
+		return nil
+	}
+	// start from nothing so that we don't include
+	// potential deleted columns from the first
+	// instance
+	cf0 := columnFamilies[0]
+	cf := cf0.cloneMeShallow()
+	// merge
+	for _, cf2 := range columnFamilies {
+		if cf.ColumnFamilyName != cf2.ColumnFamilyName {
+			log.Fatal("name should be equal")
+		}
+		cf.addColumns(cf2)
+		cf.deleteCF(cf2)
+	}
+	return cf
+}
 
+func (c *ColumnFamilyStore) merge(columnFamilies []*ColumnFamily) {
+	cf := resolve(columnFamilies)
+	columnFamilies = []*ColumnFamily{cf}
+}
+
+func resolveAndRemoveDeleted(columnFamilies []*ColumnFamily) *ColumnFamily {
+	cf := resolve(columnFamilies)
+	return removeDeleted(cf)
+}
+
+func removeDeleted(cf *ColumnFamily) *ColumnFamily {
+	if cf == nil {
+		return nil
+	}
+	gcBefore := int(time.Now().UnixNano()/int64(time.Second) - int64(config.GcGraceInSeconds))
+	// in case of a timestamp tie.
+	for cname, c := range cf.Columns {
+		_, ok := c.(SuperColumn)
+		if ok { // is a super column
+			minTimestamp := c.getMarkedForDeleteAt()
+			if minTimestamp < cf.getMarkedForDeleteAt() {
+				minTimestamp = cf.getMarkedForDeleteAt()
+			}
+			// create a new super column and add in the subcolumns
+			cf.remove(cname)
+			sc := c.(SuperColumn).cloneMeShallow()
+			for _, subColumn := range c.getSubColumns() {
+				if subColumn.timestamp() > minTimestamp {
+					if !subColumn.isMarkedForDelete() || subColumn.getLocalDeletionTime() > gcBefore {
+						sc.addColumn(subColumn)
+					}
+				}
+			}
+			if len(sc.getSubColumns()) > 0 || sc.getLocalDeletionTime() > gcBefore {
+				cf.addColumn(sc)
+			}
+		} else if (c.isMarkedForDelete() && c.getLocalDeletionTime() <= gcBefore) ||
+			c.timestamp() <= cf.getMarkedForDeleteAt() {
+			cf.remove(cname)
+		}
+	}
+	if cf.getColumnCount() == 0 && cf.getLocalDeletionTime() <= gcBefore {
+		return nil
+	}
+	return cf
+}
+
+// This function does the actual compaction for files.
+// It maintains a priority queue of the first key
+// from each file and then removes the top of the queue
+// and adds it to the SSTable and repeats this process
+// while reading the next from each file until its done
+// with all the files. The SSTable to which the keys are
+// written represents the new compacted file. Before writing
+// if there are keys that occur in multiple files and are
+// the same then a resolution is done to get the latest data.
+func (c *ColumnFamilyStore) doFileCompaction(files []string, minBufferSize int) int {
+	// calculate the expected compacted filesize
+	expectedCompactedFileSize := getExpectedCompactedFileSize(files)
+	compactionFileLocation := config.GetDataFileLocationForTable(c.tableName, expectedCompactedFileSize)
+	// if the compaction file path is empty, that
+	// means we have no space left for this compaction
+	if compactionFileLocation == "" {
+		maxFile := getMaxSizeFile(files)
+		removeFromList(files, maxFile)
+		c.doFileCompaction(files, minBufferSize)
+		return 0
+	}
+	newfile := ""
+	startTime := time.Now().UnixNano() / int64(time.Millisecond)
+	totalBytesRead := int64(0)
+	totalBytesWritten := int64(0)
+	totalKeysRead := int64(0)
+	totalKeysWritten := int64(0)
+	pq := c.initPriorityQueue(files, nil, minBufferSize)
+	if pq.Len() == 0 {
+		log.Print("nothing to compact")
+		return 0
+	}
+	mergedFileName := c.getTmpFileName()
+	var writer *SSTableWriter
+	var ssTable *SSTableReader
+	lastkey := ""
+	lfs := make([]*FileStruct, 0)
+	bufOut := make([]byte, 0)
+	expectedBloomFilterSize := getApproximateKeyCount(files)
+	if expectedBloomFilterSize <= 0 {
+		expectedBloomFilterSize = SSTIndexInterval
+	}
+	log.Printf("Expeected bloom filter size: %v\n", expectedBloomFilterSize)
+	// create the bloom filter for the compacted file
+	// compactedBloomFilter := utils.NewBloomFilter(expectedBloomFilterSize, 15)
+	columnFamilies := make([]*ColumnFamily, 0)
+	for pq.Len() > 0 || len(lfs) > 0 {
+		var fs *FileStruct
+		if pq.Len() > 0 {
+			fs = pq.Pop().(*FileStruct)
+		}
+		if fs != nil && (lastkey == "" || lastkey == fs.key) {
+			// The keys are the same so we need to add this to
+			// the lfs list
+			lastkey = fs.key
+			lfs = append(lfs, fs)
+		} else {
+			sort.Sort(ByName(lfs))
+			var columnFamily *ColumnFamily
+			bufOut = make([]byte, 0)
+			if len(lfs) > 1 {
+				for _, filestruct := range lfs {
+					// we want to add only 2 and resolve
+					// them right there in order to save
+					// on memory footprint
+					if len(columnFamilies) > 1 {
+						c.merge(columnFamilies)
+					}
+					// deserialize into column families
+					columnFamilies = append(columnFamilies, filestruct.getColumnFamily())
+				}
+				// Now after merging, append to sstable
+				columnFamily = resolveAndRemoveDeleted(columnFamilies)
+				columnFamilies = make([]*ColumnFamily, 0)
+				if columnFamily != nil {
+					CFSerializer.serializeWithIndexes(columnFamily, bufOut)
+				}
+			} else {
+				filestruct := lfs[0]
+				CFSerializer.serializeWithIndexes(filestruct.getColumnFamily(), bufOut)
+			}
+			if writer == nil {
+				// fname is the full path name!
+				fname := compactionFileLocation + string(os.PathSeparator) + mergedFileName
+				writer = NewSSTableWriter(fname, expectedBloomFilterSize)
+			}
+			writer.append(lastkey, bufOut)
+			totalKeysWritten++
+			for _, filestruct := range lfs {
+				filestruct.advance(true)
+				if filestruct.isExhausted() {
+					continue
+				}
+				heap.Push(pq, filestruct)
+				totalKeysRead++
+			}
+			lfs = make([]*FileStruct, 0)
+			lastkey = ""
+			if fs != nil {
+				// add back the fs since we processed the
+				// rest of filestructs
+				heap.Push(pq, fs)
+			}
+		}
+	}
+	if writer != nil {
+		ssTable = writer.closeAndOpenReader()
+		newfile = writer.getFilename()
+	}
+	c.rwmu.Lock()
+	defer c.rwmu.Unlock()
+	for _, file := range files {
+		delete(c.ssTables, file)
+	}
+	if newfile != "" {
+		c.ssTables[newfile] = ssTable
+		totalBytesWritten += getFileSizeFromName(newfile)
+	}
+	for _, file := range files {
+		getSSTableReader(file).delete()
+	}
+	log.Printf("Compacted to %v. %v/%v bytes for %v/%v keys read/written. Time: %vms.",
+		newfile, totalBytesRead, totalBytesWritten, totalKeysRead, totalKeysWritten,
+		time.Now().UnixNano()/int64(time.Millisecond)-startTime)
+	return len(files)
 }
 
 func readInt(r io.Reader) int {
@@ -465,7 +633,7 @@ func (p ByName) Len() int {
 
 // Less ...
 func (p ByName) Less(i, j int) bool {
-	return p[i].reader.Name() < p[j].reader.Name()
+	return p[i].getFileName() < p[j].getFileName()
 }
 
 // Swap ...
@@ -473,39 +641,41 @@ func (p ByName) Swap(i, j int) {
 	p[i], p[j] = p[j], p[i]
 }
 
-func (c *ColumnFamilyStore) doCompaction() {
+func (c *ColumnFamilyStore) doCompaction() int {
 	// break the files into buckets and then compact
-	c.rwmu.Lock()
-	c.isCompacting = true
-	c.rwmu.Unlock()
+	filesCompacted := 0
+	// c.rwmu.Lock()
+	// c.isCompacting = true
+	// c.rwmu.Unlock()
 	files := make([]string, 0)
 	for file := range c.ssTables {
 		files = append(files, file)
 	}
 	buckets := c.stageOrderedCompaction(files)
 	for _, fileList := range buckets {
+		if len(fileList) < config.MinCompactionThres {
+			continue
+		}
 		sort.Sort(ByFileName(fileList))
-		if len(fileList) >= c.threshold {
-			files = make([]string, 0)
-			count := 0
-			for _, file := range fileList {
-				files = append(files, file)
-				count++
-				if count == c.threshold {
-					break
-				}
-			}
-			// for each becket if it has crossed the threshold
-			// do the compaction. Incase of range compaction,
-			// merge the counting bloom filters also.
-			if count == c.threshold {
-				c.doFileCompaction(files, c.bufSize)
+		files = make([]string, 0)
+		count := 0
+		mark := len(fileList)
+		if config.MaxCompactionThres < mark {
+			mark = config.MaxCompactionThres
+		}
+		for _, file := range fileList {
+			files = append(files, file)
+			count++
+			if count == mark {
+				break
 			}
 		}
+		filesCompacted += c.doFileCompaction(files, c.bufSize)
 	}
-	c.rwmu.Lock()
-	c.isCompacting = false
-	c.rwmu.Unlock()
+	// c.rwmu.Lock()
+	// c.isCompacting = false
+	// c.rwmu.Unlock()
+	return filesCompacted
 }
 
 func (c *ColumnFamilyStore) apply(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
@@ -554,7 +724,7 @@ func (c *ColumnFamilyStore) storeLocation(filename string, bf *utils.BloomFilter
 	doCompaction := false
 	ssTableSize := 0
 	c.rwmu.Lock()
-	c.ssTables[filename] = true
+	// c.ssTables[filename] = true // TO REVIEW
 	storeBloomFilter(filename, bf)
 	ssTableSize = len(c.ssTables)
 	c.rwmu.Unlock()

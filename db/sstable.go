@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strings"
 
 	"github.com/willf/bitset"
 
@@ -93,9 +94,12 @@ func NewKeyPositionInfo(key string, position int64) *KeyPositionInfo {
 // SSTable is the struct for SSTable
 type SSTable struct {
 	dataFileName       string
+	columnFamilyName   string
+	bf                 *utils.BloomFilter
 	dataWriter         *os.File
 	blockIndex         map[string]*BlockMetadata
 	blockIndexes       []map[string]*BlockMetadata
+	indexPositions     []*KeyPositionInfo
 	lastWrittenKey     string
 	indexKeysWritten   int
 	indexInterval      int
@@ -104,23 +108,64 @@ type SSTable struct {
 
 // NewSSTable initializes a SSTable
 func NewSSTable(filename string) *SSTable {
+	// Attention: filename is the full path filename!
 	s := &SSTable{}
 	s.indexKeysWritten = 0
 	s.lastWrittenKey = ""
 	s.indexInterval = 128
 	// filename of the type:
-	//  var/storage/data/<tableName>-<columnFamilyName>-<index>-Data.db
+	//  var/storage/data/tableName/<columnFamilyName>-<index>-Data.db
 	s.dataFileName = filename
-	_, ok := SSTIndexMetadataMap[s.dataFileName]
-	if !ok {
-		s.loadIndexFile() // mainly load bloom filter and index file
-	}
+	s.columnFamilyName = getColumnFamilyFromFullPath(filename)
+	// _, ok := SSTIndexMetadataMap[s.dataFileName]
+	// if !ok {
+	// 	s.loadIndexFile() // mainly load bloom filter and index file
+	// }
 	return s
+}
+
+func (s *SSTable) getFilename() string {
+	return s.dataFileName
+}
+
+func (s *SSTable) indexFilename(dataFile string) string {
+	// input: /var/storage/data/tableName/<cf>-<index>-Data.db
+	// output:/var/storage/data/tableName/<cf>-<index>-Index.db
+	parts := strings.Split(dataFile, "-")
+	parts[len(parts)-1] = "Index.db"
+	return strings.Join(parts, "-")
+}
+
+func (s *SSTable) filterFilename(dataFile string) string {
+	// input: /var/storage/data/tableName/<cf>-<index>-Data.db
+	// output:/var/storage/data/tableName/<cf>-<index>-Filter.db
+	parts := strings.Split(dataFile, "-")
+	parts[len(parts)-1] = "Filter.db"
+	return strings.Join(parts, "-")
+}
+
+func (s *SSTable) parseTableName(filename string) string {
+	// filename is of format:
+	// /var/storage/data/tableName/<cf>-<index>-Data.db
+	parts := strings.Split(filename, string(os.PathSeparator))
+	return parts[len(parts)-2]
+}
+
+func (s *SSTable) getColumnFamilyName() string {
+	return s.columnFamilyName
+}
+
+func getColumnFamilyFromFullPath(filename string) string {
+	// filename of the type:
+	//  var/storage/data/tableName/<columnFamilyName>-<index>-Data.db
+	values := strings.Split(filename, string(os.PathSeparator))
+	cfName := strings.Split(values[len(values)-1], "-")[0]
+	return cfName
 }
 
 func (s *SSTable) loadIndexFile() {
 	// filename of the type:
-	//  var/storage/data/<tableName>-<columnFamilyName>-<index>-Data.db
+	//  var/storage/data/tableName/<columnFamilyName>-<index>-Data.db
 	file, err := os.Open(s.dataFileName)
 	if err != nil {
 		log.Fatal(err)
@@ -132,8 +177,7 @@ func (s *SSTable) loadIndexFile() {
 	// the first block index position is stored
 	// at the 16 bytes before the end of the file
 	file.Seek(size-16, 0)
-	b8 := make([]byte, 8)
-	firstBlockIndexPosition := readInt64(file, b8)
+	firstBlockIndexPosition := readInt64(file)
 	keyPositionInfos := make([]*KeyPositionInfo, 0)
 	SSTIndexMetadataMap[s.dataFileName] = keyPositionInfos
 	nextPosition := size - 16 - firstBlockIndexPosition
@@ -150,7 +194,6 @@ func (s *SSTable) loadIndexFile() {
 	// The goal is to obtain KeyPositionInfo:
 	//    pair: (largestKeyInBlock, indexBlockPosition)
 	// The code below is really an ugly workaround....
-	b4 := make([]byte, 4)
 	var currentPosition int64
 	for {
 		currentPosition = nextPosition
@@ -161,9 +204,9 @@ func (s *SSTable) loadIndexFile() {
 			log.Printf("Done reading the block indexes\n")
 			break
 		}
-		readInt32(file, b4) // read block index size
+		readInt32(file) // read block index size
 		nextPosition -= 4
-		numKeys := readInt32(file, b4)
+		numKeys := readInt32(file)
 		nextPosition -= 4
 		for i := int32(0); i < numKeys; i++ {
 			keyInBlock, size := readString(file)
@@ -172,17 +215,32 @@ func (s *SSTable) loadIndexFile() {
 				keyPositionInfos = append(keyPositionInfos,
 					&KeyPositionInfo{keyInBlock, currentPosition})
 			}
-			readInt64(file, b8) // read relative offset
-			readInt64(file, b8) // read dataSize
+			readInt64(file) // read relative offset
+			readInt64(file) // read dataSize
 			nextPosition -= 16
 		}
 	}
 	// should also sort KeyPositionInfos, but I omit it. :)
 }
 
+func readBool(file *os.File) (bool, int) {
+	b := make([]byte, 1)
+	file.Read(b)
+	if b[0] == 1 {
+		return true, 1
+	}
+	return false, 1
+}
+
+func readBytes(file *os.File) ([]byte, int) {
+	size := readInt(file)
+	b := make([]byte, size)
+	file.Read(b)
+	return b, size + 4
+}
+
 func readString(file *os.File) (string, int64) {
-	b4 := make([]byte, 4)
-	size := int(readInt32(file, b4))
+	size := int(readInt32(file))
 	bs := make([]byte, size)
 	return readBlockIdxKey(file, bs), int64(size + 4)
 }
@@ -198,7 +256,8 @@ func readBlockIdxKey(file *os.File, b []byte) string {
 	return string(b)
 }
 
-func readInt64(file *os.File, b8 []byte) int64 {
+func readInt64(file *os.File) int64 {
+	b8 := make([]byte, 8)
 	n, err := file.Read(b8)
 	if err != nil {
 		log.Fatal(err)
@@ -209,7 +268,8 @@ func readInt64(file *os.File, b8 []byte) int64 {
 	return int64(binary.BigEndian.Uint64(b8))
 }
 
-func readInt32(file *os.File, b4 []byte) int32 {
+func readInt32(file *os.File) int32 {
+	b4 := make([]byte, 4)
 	n, err := file.Read(b4)
 	if err != nil {
 		log.Fatal(err)
@@ -220,7 +280,8 @@ func readInt32(file *os.File, b4 []byte) int32 {
 	return int32(binary.BigEndian.Uint32(b4))
 }
 
-func readUint64(file *os.File, b8 []byte) uint64 {
+func readUint64(file *os.File) uint64 {
+	b8 := make([]byte, 8)
 	n, err := file.Read(b8)
 	if err != nil {
 		log.Fatal(err)
@@ -263,17 +324,16 @@ func (s *SSTable) loadBloomFilter(file *os.File, size int64) {
 	}
 	// don't need this variable
 	// totalDataSize := int64(binary.BigEndian.Uint64(b8))
-	b4 := make([]byte, 4)
-	count := readInt32(file, b4)
+	count := readInt32(file)
 	// read hashes: the number of hash functions
-	hashes := readInt32(file, b4)
+	hashes := readInt32(file)
 	// read size: the number of bits of BitSet
-	bitsize := readInt32(file, b4)
+	bitsize := readInt32(file)
 	// convert to number of uint64
 	num8byte := (bitsize-1)/64 + 1
 	buf := make([]uint64, num8byte)
 	for i := int32(0); i < num8byte; i++ {
-		buf = append(buf, readUint64(file, b8))
+		buf = append(buf, readUint64(file))
 	}
 	bs := bitset.From(buf)
 	SSTbfs[s.dataFileName] = utils.NewBloomFilterS(count, hashes, bitsize, bs)
