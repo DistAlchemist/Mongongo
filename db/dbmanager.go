@@ -34,6 +34,7 @@ func GetManagerInstance() *Manager {
 func (d *Manager) init() {
 	// read the config file
 	tableToColumnFamily := config.Init()
+	storeMetadata(tableToColumnFamily)
 	for table := range tableToColumnFamily {
 		tbl := openTable(table)
 		tbl.onStart()
@@ -43,6 +44,17 @@ func (d *Manager) init() {
 	// config.Init()
 	// storeMetadata(tableToColumnFamily) // useless
 
+}
+
+func storeMetadata(tableToColumnFamily map[string]map[string]config.CFMetaData) {
+	cfID := 0
+	for table, columnFamilies := range tableToColumnFamily {
+		tmetadata := getTableMetadataInstance(table)
+		for columnFamily := range columnFamilies {
+			tmetadata.Add(columnFamily, cfID, config.GetColumnTypeTableName(table, columnFamily))
+			cfID++
+		}
+	}
 }
 
 // // create metadata tables. table stores tableName and columnFamilyName

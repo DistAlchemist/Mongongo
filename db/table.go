@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	tableInstances map[string]*Table
-	tCreateLock    sync.Mutex
+	tableInstances   = map[string]*Table{}
+	tableMetadataMap = map[string]*TableMetadata{}
+	idCFMap          = map[int]string{}
+	tCreateLock      sync.Mutex
 )
 
 // Table ...
@@ -44,7 +46,7 @@ func openTable(table string) *Table {
 func NewTable(tableName string) *Table {
 	t := &Table{}
 	t.tableName = tableName
-	t.tableMetadata = t.getTableMetadataInstance()
+	t.tableMetadata = getTableMetadataInstance(t.tableName)
 	cfIDMap := t.tableMetadata.cfIDMap
 	for columnFamily := range cfIDMap {
 		t.columnFamilyStores[columnFamily] = NewColumnFamilyStore(tableName, columnFamily)
@@ -52,19 +54,13 @@ func NewTable(tableName string) *Table {
 	return t
 }
 
-func (t *Table) getTableMetadataInstance() *TableMetadata {
-	if t.tableMetadata == nil {
-		fileName := getFileName()
-		if _, err := os.Stat(fileName); err == nil {
-			// file exists
-			t.loadTableMetadata(fileName)
-		} else if os.IsNotExist(err) {
-			return NewTableMetadata()
-		} else {
-			log.Fatal(err)
-		}
+func getTableMetadataInstance(tableName string) *TableMetadata {
+	tableMetadata, ok := tableMetadataMap[tableName]
+	if !ok {
+		tableMetadata = NewTableMetadata()
+		tableMetadataMap[tableName] = tableMetadata
 	}
-	return t.tableMetadata
+	return tableMetadata
 }
 
 func (t *Table) loadTableMetadata(fileName string) {
@@ -108,9 +104,7 @@ func (t *Table) onStart() {
 	cfIDMap := t.tableMetadata.cfIDMap
 	for columnFamily := range cfIDMap {
 		cfStore := t.columnFamilyStores[columnFamily]
-		if cfStore != nil {
-			cfStore.onStart()
-		}
+		cfStore.onStart()
 	}
 }
 

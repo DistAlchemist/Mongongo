@@ -48,6 +48,14 @@ func NewBloomFilterS(count, hashes, bitsize int32, bs *bitset.BitSet) *BloomFilt
 	return bf
 }
 
+// NewBloomFilterDS creates a bf deserialized from data
+func NewBloomFilterDS(hashes int32, filter *bitset.BitSet) *BloomFilter {
+	bf := &BloomFilter{}
+	bf.hashes = int(hashes)
+	bf.filter = filter
+	return bf
+}
+
 // NewBloomFilter gives out a new instance of bf
 func NewBloomFilter(numElements, bitsPerElement int) *BloomFilter {
 	if numElements < 0 || bitsPerElement < 1 {

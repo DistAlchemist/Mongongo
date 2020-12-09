@@ -7,6 +7,7 @@ package db
 
 import (
 	"encoding/binary"
+	"sort"
 	"sync/atomic"
 
 	"github.com/DistAlchemist/Mongongo/config"
@@ -14,12 +15,15 @@ import (
 
 // ColumnFamily definition
 type ColumnFamily struct {
-	ColumnFamilyName string
-	ColumnType       string
-	Factory          AColumnFactory
-	Columns          map[string]IColumn
-	size             int32
-	deleteMark       bool
+	ColumnFamilyName  string
+	ColumnType        string
+	Factory           AColumnFactory
+	Columns           map[string]IColumn
+	size              int32
+	deleteMark        bool
+	localDeletionTime int
+	markedForDeleteAt int64
+	columnSerializer  IColumnSerializer
 }
 
 var typeToColumnFactory = map[string]AColumnFactory{
@@ -34,32 +38,45 @@ func NewColumnFamily(columnFamilyName, columnType string) *ColumnFamily {
 	cf.ColumnType = columnType
 	cf.Factory = typeToColumnFactory[columnType]
 	cf.deleteMark = false
+	if "Standard" == cf.ColumnType {
+		cf.columnSerializer = NewColumnSerializer()
+	} else {
+		cf.columnSerializer = NewSuperColumnSerializer()
+	}
 	return cf
+}
+
+func createColumnFamily(tableName, cfName string) *ColumnFamily {
+	columnType := config.GetColumnTypeTableName(tableName, cfName)
+	return NewColumnFamily(cfName, columnType)
 }
 
 // CreateColumn setup a new column in columnFamily
 func (cf *ColumnFamily) CreateColumn(columnName, value string, timestamp int64) {
 	column := cf.Factory.createColumn(columnName, value, timestamp)
-	cf.addColumn(columnName, column)
+	cf.addColumn(column)
 }
 
-func (cf *ColumnFamily) addColumn(name string, column IColumn) {
-	newSize := int32(0)
+// If we find and old column that has the same
+// name, then ask it to resolve itself, else
+// we add the new column
+func (cf *ColumnFamily) addColumn(column IColumn) {
+	name := column.getName()
 	oldColumn, ok := cf.Columns[name]
-	if !ok {
-		oldSize := oldColumn.getSize()
-		if oldColumn.putColumn(column) {
-			// This will never be called for super column as put column
-			// always returns false
-			cf.Columns[name] = column
-			newSize = column.getSize()
+	if ok {
+		_, yes := oldColumn.(SuperColumn)
+		if yes { // is SuperColumn
+			oldSize := oldColumn.getSize()
+			oldColumn.putColumn(column)
+			atomic.AddInt32(&cf.size, int32(oldColumn.getSize()-oldSize))
 		} else {
-			newSize = oldColumn.getSize()
+			if oldColumn.(Column).comparePriority(column.(Column)) <= 0 {
+				cf.Columns[name] = column
+				atomic.AddInt32(&cf.size, int32(column.getSize()))
+			}
 		}
-		atomic.AddInt32(&cf.size, int32(newSize-oldSize))
 	} else {
-		newSize = column.getSize()
-		atomic.AddInt32(&cf.size, newSize)
+		atomic.AddInt32(&cf.size, column.getSize())
 		cf.Columns[name] = column
 	}
 }
@@ -118,11 +135,64 @@ func (cf *ColumnFamily) getColumnCount() int {
 
 func (cf *ColumnFamily) addColumns(columnFamily *ColumnFamily) {
 	columns := cf.Columns
-	for cName, column := range columns {
-		cf.addColumn(cName, column)
+	for _, column := range columns {
+		cf.addColumn(column)
 	}
+}
+
+func (cf *ColumnFamily) getMarkedForDeleteAt() int64 {
+	return cf.markedForDeleteAt
+}
+
+func (cf *ColumnFamily) getLocalDeletionTime() int {
+	return cf.localDeletionTime
+}
+
+func (cf *ColumnFamily) deleteCF(cf2 *ColumnFamily) {
+	t := cf.localDeletionTime
+	if t < cf2.localDeletionTime {
+		t = cf2.localDeletionTime
+	}
+	m := cf.getMarkedForDeleteAt()
+	if m < cf2.getMarkedForDeleteAt() {
+		m = cf2.getMarkedForDeleteAt()
+	}
+	cf.delete(t, m)
+}
+
+func (cf *ColumnFamily) remove(columnName string) {
+	delete(cf.Columns, columnName)
+}
+
+func (cf *ColumnFamily) getSortedColumns() []IColumn {
+	cnames := make([]string, 0)
+	for name := range cf.Columns {
+		cnames = append(cnames, name)
+	}
+	sort.Sort(ByKey(cnames))
+	res := make([]IColumn, 0)
+	for _, name := range cnames {
+		res = append(res, cf.Columns[name])
+	}
+	return res
+}
+
+func (cf *ColumnFamily) cloneMeShallow() *ColumnFamily {
+	c := NewColumnFamily(cf.ColumnFamilyName, cf.ColumnType)
+	c.markedForDeleteAt = cf.markedForDeleteAt
+	c.localDeletionTime = cf.localDeletionTime
+	return c
 }
 
 func (cf *ColumnFamily) clear() {
 	cf.Columns = make(map[string]IColumn)
+}
+
+func (cf *ColumnFamily) delete(localtime int, timestamp int64) {
+	cf.localDeletionTime = localtime
+	cf.markedForDeleteAt = timestamp
+}
+
+func (cf *ColumnFamily) getColumnSerializer() IColumnSerializer {
+	return cf.columnSerializer
 }

@@ -35,7 +35,7 @@ func (f SuperColumnFactory) createColumn(name, value string, timestamp int64) IC
 	}
 	superColumnName, columnName := columnNames[0], columnNames[1]
 	superColumn := NewSuperColumn(superColumnName)
-	subColumn := NewColumn(columnName, value, timestamp)
-	superColumn.addColumn(columnName, subColumn)
+	subColumn := NewColumn(columnName, value, timestamp, false)
+	superColumn.addColumn(subColumn)
 	return superColumn
 }

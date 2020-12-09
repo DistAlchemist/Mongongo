@@ -8,19 +8,46 @@ package db
 import (
 	"encoding/binary"
 	"log"
+	"math"
+	"os"
 	"sync/atomic"
 )
 
 // SuperColumn implements IColumn interface
 type SuperColumn struct {
-	Name       string
-	Columns    map[string]IColumn
-	deleteMark bool
-	size       int32
-	Timestamp  int64
+	Name              string
+	Columns           map[string]IColumn
+	deleteMark        bool
+	size              int32
+	Timestamp         int64
+	localDeletionTime int
+	markedForDeleteAt int64
 }
 
-func (sc SuperColumn) addColumn(name string, column IColumn) {
+func (sc SuperColumn) markForDeleteAt(localDeletionTime int, timestamp int64) {
+	sc.localDeletionTime = localDeletionTime
+	sc.markedForDeleteAt = timestamp
+}
+
+func (sc SuperColumn) getLocalDeletionTime() int {
+	return sc.localDeletionTime
+}
+
+func (sc SuperColumn) getMarkedForDeleteAt() int64 {
+	return sc.markedForDeleteAt
+}
+
+func (sc SuperColumn) isMarkedForDelete() bool {
+	return sc.deleteMark
+}
+
+func (sc SuperColumn) getValue() []byte {
+	log.Fatal("super column doesn't support getValue")
+	return []byte{}
+}
+
+func (sc SuperColumn) addColumn(column IColumn) {
+	name := column.getName()
 	oldColumn, ok := sc.Columns[name]
 	if !ok {
 		sc.Columns[name] = column
@@ -43,6 +70,8 @@ func NewSuperColumn(name string) SuperColumn {
 	sc.Columns = make(map[string]IColumn)
 	sc.deleteMark = false
 	sc.size = 0
+	sc.localDeletionTime = math.MinInt32
+	sc.markedForDeleteAt = math.MinInt64
 	return sc
 }
 
@@ -108,6 +137,8 @@ func (sc SuperColumn) getName() string {
 	return sc.Name
 }
 
+// Go through each subComlun. If it exists then resolve.
+// Else create
 func (sc SuperColumn) putColumn(column IColumn) bool {
 	_, ok := column.(SuperColumn)
 	if !ok {
@@ -117,12 +148,69 @@ func (sc SuperColumn) putColumn(column IColumn) bool {
 		log.Fatal("The name should match the name of the current super column")
 	}
 	columns := column.getSubColumns()
-	for name, subColumn := range columns {
-		sc.addColumn(name, subColumn)
+	for _, subColumn := range columns {
+		sc.addColumn(subColumn)
+	}
+	if column.getMarkedForDeleteAt() > sc.markedForDeleteAt {
+		sc.markForDeleteAt(column.getLocalDeletionTime(), column.getMarkedForDeleteAt())
 	}
 	return false
 }
 
+func (sc SuperColumn) cloneMeShallow() SuperColumn {
+	s := NewSuperColumn(sc.Name)
+	s.markForDeleteAt(sc.localDeletionTime, sc.markedForDeleteAt)
+	return s
+}
+
 func (sc SuperColumn) getSubColumns() map[string]IColumn {
 	return sc.Columns
+}
+
+// SCSerializer ...
+var SCSerializer = NewSuperColumnSerializer()
+
+// SuperColumnSerializer ...
+type SuperColumnSerializer struct{}
+
+// NewSuperColumnSerializer ...
+func NewSuperColumnSerializer() *SuperColumnSerializer {
+	return &SuperColumnSerializer{}
+}
+
+func (s *SuperColumnSerializer) serialize(column IColumn, dos *os.File) {
+	superColumn := column.(SuperColumn)
+	writeString(dos, column.getName())
+	writeInt(dos, superColumn.getLocalDeletionTime())
+	writeInt64(dos, superColumn.getMarkedForDeleteAt())
+	columns := column.getSubColumns()
+	for _, subColumn := range columns {
+		CSerializer.serialize(subColumn, dos)
+	}
+}
+
+func (s *SuperColumnSerializer) serializeB(column IColumn, dos []byte) {
+	superColumn := column.(SuperColumn)
+	writeStringB(dos, column.getName())
+	writeIntB(dos, superColumn.getLocalDeletionTime())
+	writeInt64B(dos, superColumn.getMarkedForDeleteAt())
+	columns := column.getSubColumns()
+	for _, subColumn := range columns {
+		CSerializer.serializeB(subColumn, dos)
+	}
+}
+
+func (s *SuperColumnSerializer) deserialize(dis *os.File) IColumn {
+	name, _ := readString(dis)
+	superColumn := NewSuperColumn(name)
+	localDeletionTime := readInt(dis)
+	timestamp := readInt64(dis)
+	superColumn.markForDeleteAt(localDeletionTime, timestamp)
+	// read the number of columns
+	size := readInt(dis)
+	for i := 0; i < size; i++ {
+		subColumn := CSerializer.deserialize(dis)
+		superColumn.addColumn(subColumn)
+	}
+	return superColumn
 }
