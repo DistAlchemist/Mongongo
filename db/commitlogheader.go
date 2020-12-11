@@ -5,83 +5,96 @@
 
 package db
 
-import "encoding/binary"
+import (
+	"log"
+
+	"github.com/willf/bitset"
+)
 
 // CommitLogHeader represents the header of commit log
 type CommitLogHeader struct {
-	header   []byte
-	position []int
+	// header        []byte
+	// position      []int
+	dirty         *bitset.BitSet
+	lastFlushedAt []int
 }
 
 // NewCommitLogHeader creates a new commit log header
 // size is the number of column families
 func NewCommitLogHeader(size int) *CommitLogHeader {
 	c := &CommitLogHeader{}
-	c.header = make([]byte, size)
-	c.position = make([]int, size)
+	// c.header = make([]byte, size)
+	// c.position = make([]int, size)
+	c.dirty = bitset.New(uint(size))
+	c.lastFlushedAt = make([]int, size)
 	return c
 }
 
-func (c *CommitLogHeader) copy() *CommitLogHeader {
-	n := &CommitLogHeader{}
-	n.header = make([]byte, 0)
-	n.position = make([]int, 0)
-	for _, h := range c.header {
-		n.header = append(n.header, h)
+// NewCommitLogHeaderD used in deserializing
+func NewCommitLogHeaderD(dirty *bitset.BitSet, lastFlushedAt []int) *CommitLogHeader {
+	c := &CommitLogHeader{}
+	c.dirty = dirty
+	c.lastFlushedAt = lastFlushedAt
+	return c
+}
+
+// NewCommitLogHeaderC used in copy
+func NewCommitLogHeaderC(clHeader *CommitLogHeader) *CommitLogHeader {
+	c := &CommitLogHeader{}
+	c.dirty = clHeader.dirty.Clone()
+	c.lastFlushedAt = make([]int, len(clHeader.lastFlushedAt))
+	for _, x := range clHeader.lastFlushedAt {
+		c.lastFlushedAt = append(c.lastFlushedAt, x)
 	}
-	for _, p := range c.position {
-		n.position = append(n.position, p)
-	}
-	return n
+	return c
 }
 
-func (c *CommitLogHeader) zeroPositions() {
-	size := len(c.position)
-	c.position = make([]int, size)
+func (c *CommitLogHeader) getPosition(index int) int {
+	return c.lastFlushedAt[index]
 }
 
-func (c *CommitLogHeader) turnOn(idx int, position int64) {
-	c.header[idx] = byte(1)
-	c.position[idx] = int(position)
+func (c *CommitLogHeader) turnOn(index int, position int64) {
+	c.dirty.Set(uint(index))
+	c.lastFlushedAt[index] = int(position)
 }
 
-func (c *CommitLogHeader) turnOff(idx int) {
-	c.header[idx] = byte(0)
-	c.position[idx] = 0
+func (c *CommitLogHeader) turnOff(index int) {
+	c.dirty.Clear(uint(index))
+	c.lastFlushedAt[index] = 0
 }
 
-func (c *CommitLogHeader) and(commitLogHeader *CommitLogHeader) {
-	clh2 := commitLogHeader.header
-	for i := 0; i < len(c.header); i++ {
-		c.header[i] = c.header[i] & clh2[i]
-	}
+func (c *CommitLogHeader) isDirty(index int) bool {
+	return c.dirty.Test(uint(index))
 }
 
 func (c *CommitLogHeader) isSafeToDelete() bool {
-	for _, b := range c.header {
-		if b == 1 {
-			return false
-		}
-	}
-	return true
+	return c.dirty.Any()
+}
+
+func (c *CommitLogHeader) clear() {
+	c.dirty.ClearAll()
+	c.lastFlushedAt = make([]int, 0)
 }
 
 func (c *CommitLogHeader) toByteArray() []byte {
-	// of the format:
-	//  headerByteLength: uint32
-	//  header          : []byte
-	//  position        : []uint32
-	buf := make([]byte, 0)
-	b4 := make([]byte, 4)
-	binary.BigEndian.PutUint32(b4, uint32(len(c.header)))
-	// put headByteLength uint32
-	buf = append(buf, b4...)
-	// put header
-	buf = append(buf, c.header...)
-	// put position
-	for _, p := range c.position {
-		binary.BigEndian.PutUint32(b4, uint32(p))
-		buf = append(buf, b4...)
-	}
-	return buf
+	bos := make([]byte, 0)
+	clhSerialize(c, bos)
+	return bos
 }
+
+func clhSerialize(clHeader *CommitLogHeader, dos []byte) {
+	dbytes, err := clHeader.dirty.MarshalBinary()
+	if err != nil {
+		log.Fatal(err)
+	}
+	writeIntB(dos, len(dbytes))
+	dos = append(dos, dbytes...)
+	writeIntB(dos, len(clHeader.lastFlushedAt))
+	for _, position := range clHeader.lastFlushedAt {
+		writeIntB(dos, position)
+	}
+}
+
+// func clhDeserialize(dis []byte) *CommitLogHeader {
+// 	dirtyLen := readInt(dis)
+// }

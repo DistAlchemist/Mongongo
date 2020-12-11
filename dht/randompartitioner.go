@@ -7,11 +7,22 @@ package dht
 
 import (
 	"crypto/md5"
+	"fmt"
+	"math/rand"
+	"os"
 	"strings"
+	"time"
+
+	"github.com/DistAlchemist/Mongongo/config"
 )
 
 // RandomPartInstance ...
-var RandomPartInstance = NewRandomPartitioner()
+var (
+	RandomPartInstance = NewRandomPartitioner()
+	s                  = rand.NewSource(time.Now().UnixNano())
+	rnd                = rand.New(s)
+	sid, err           = os.Hostname()
+)
 
 // RandomPartitioner ...
 type RandomPartitioner struct {
@@ -47,4 +58,31 @@ func (r *RandomPartitioner) Compare(s1, s2 string) int {
 		return -1
 	}
 	return 1
+}
+
+// GetDefaultToken ...
+func (r *RandomPartitioner) GetDefaultToken() string {
+	initialToken := config.InitialToken
+	if initialToken != "" {
+		return initialToken
+	}
+	// generate random token
+	guid := getGUID()
+	token := r.Hash(guid)
+	return token
+}
+
+func getGUID() string {
+	t := time.Now().UnixNano() / int64(time.Millisecond)
+	r := rnd.Int63()
+	res := string(sid) + ":" +
+		fmt.Sprint(t) + ":" +
+		fmt.Sprint(r)
+	return res
+}
+
+// Hash ...
+func (r *RandomPartitioner) Hash(key string) string {
+	tmp := md5.Sum([]byte(key))
+	return string(tmp[:])
 }

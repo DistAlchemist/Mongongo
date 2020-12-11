@@ -6,9 +6,13 @@
 package db
 
 import (
+	"fmt"
+	"log"
+	"strconv"
 	"sync"
 
 	"github.com/DistAlchemist/Mongongo/config"
+	"github.com/DistAlchemist/Mongongo/dht"
 )
 
 var (
@@ -101,19 +105,48 @@ func sysInitMetadata() *StorageMetadata {
 	}
 	// read the sytem table to retrieve the storage ID
 	// and the generation
-	// table := openTable(config.SysTableName)
-	// filter := NewIdentityQueryFilter(sysLocationKey, NewQueryPathCF(sysLocationCF))
-	// cf = table.getColumnFamilyStore(sysLocationCF).getColumnFamily(filter)
-	// p := dht.RandomPartInstance // hard code here
-	// if cf == nil {
-	// 	token = p.GetDefaultToken()
-	// }
+	table := openTable(config.SysTableName)
+	filter := NewIdentityQueryFilter(sysLocationKey, NewQueryPathCF(sysLocationCF))
+	cf := table.getColumnFamilyStore(sysLocationCF).getColumnFamily(filter)
+	p := dht.RandomPartInstance // hard code here
+	if cf == nil {
+		token := p.GetDefaultToken()
+		log.Print("saved token not found. using " + token)
+		generation := 1
+		rm := NewRowMutation(config.SysTableName, sysLocationKey)
+		cf = createColumnFamily(config.SysTableName, sysLocationCF)
+		cf.addColumn(NewColumnKV(sysToken, token))
+		cf.addColumn(NewColumnKV(sysGeneration, fmt.Sprint(generation)))
+		rm.AddCF(cf)
+		rm.ApplyE()
+		sysMetadata = &StorageMetadata{token, generation}
+		return sysMetadata
+	}
+	// reach here means that we crashed and came back up
+	// so we need to bump generation number
+	tokenColumn := cf.getColumn(sysToken)
+	token := string(tokenColumn.getValue())
+	log.Print("saved token found: ", token)
+
+	generation := cf.getColumn(sysGeneration)
+	gen, err := strconv.Atoi(string(generation.getValue()))
+	gen++
+	if err != nil {
+		log.Fatal(err)
+	}
+	rm := NewRowMutation(config.SysTableName, sysLocationKey)
+	cf = createColumnFamily(config.SysTableName, sysLocationCF)
+	generation2 := NewColumn(sysGeneration, fmt.Sprint(gen), generation.timestamp()+1, false)
+	cf.addColumn(generation2)
+	rm.AddCF(cf)
+	rm.ApplyE()
+	sysMetadata = &StorageMetadata{token, gen}
 	return sysMetadata
 }
 
 // StorageMetadata stores id and generation
 type StorageMetadata struct {
-	storageID  uint64
+	storageID  string
 	generation int
 }
 

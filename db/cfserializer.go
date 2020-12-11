@@ -19,6 +19,12 @@ func NewCFSerializer() *ColumnFamilySerializer {
 	return c
 }
 
+func (c *ColumnFamilySerializer) serialize(cf *ColumnFamily, dos []byte) {
+	writeStringB(dos, cf.ColumnFamilyName)
+	writeStringB(dos, cf.ColumnType)
+	c.serializeForSSTable(cf, dos)
+}
+
 func (c *ColumnFamilySerializer) deserializeFromSSTableNoColumns(cf *ColumnFamily, input *os.File) *ColumnFamily {
 	localtime := readInt(input)
 	timestamp := readInt64(input)

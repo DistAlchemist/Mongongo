@@ -78,12 +78,12 @@ func (c *CommitLogContext) isValidContext() bool {
 
 func (c *CommitLog) setNextFileName() {
 	c.logFile = config.LogFileDir + string(os.PathSeparator) +
-		"CommitLog-" + c.table + "-" +
+		"CommitLog-" +
 		strconv.FormatInt(time.Now().UnixNano()/int64(time.Millisecond), 10) +
 		".log"
 }
 
-func (c *CommitLog) createWriter(file string) *os.File {
+func createCLWriter(file string) *os.File {
 	f, err := os.Create(file)
 	if err != nil {
 		log.Print(err)
@@ -119,11 +119,9 @@ func (c *CommitLog) writeCommitLogHeaderB(bytes []byte, reset bool) {
 	}
 }
 
-func (c *CommitLog) writeCommitLogHeaderC(commitLogFileName string, bytes []byte) {
-	logWriter := c.createWriter(commitLogFileName)
-	logWriter.Seek(0, 0)
-	// write the commit log header
-	logWriter.Write(bytes)
+func (c *CommitLog) writeOldCommitLogHeader(oldFile string, header *CommitLogHeader) {
+	logWriter := createCLWriter(oldFile)
+	writeCommitLogHeader(logWriter, header.toByteArray())
 	logWriter.Close()
 }
 
@@ -152,7 +150,7 @@ func NewCommitLog(table string, recoveryMode bool) *CommitLog {
 	c.forcedRollOver = false
 	if !recoveryMode {
 		c.setNextFileName()
-		c.logWriter = c.createWriter(c.logFile)
+		c.logWriter = createCLWriter(c.logFile)
 		c.writeCommitLogHeader()
 	}
 	return c
@@ -165,7 +163,7 @@ func NewCommitLogE(recoveryMode bool) *CommitLog {
 	c.forcedRollOver = false
 	if !recoveryMode {
 		c.setNextFileName()
-		c.logWriter = c.createWriter(c.logFile)
+		c.logWriter = createCLWriter(c.logFile)
 		c.writeCommitLogHeader()
 	}
 	return c
@@ -191,40 +189,68 @@ func openCommitLogE() *CommitLog {
 	return clSInstance
 }
 
+func (c *CommitLog) maybeUpdateHeader(row *Row) {
+	// update the header of the commit log if a
+	// new column family is encountered for the
+	// first time
+	table := openTable(row.table)
+	for cfName := range row.getColumnFamilies() {
+		id := table.getColumnFamilyID(cfName)
+		if c.clHeader.isDirty(id) == false {
+			c.clHeader.turnOn(id, getCurrentPos(c.logWriter))
+			c.seekAndWriteCommitLogHeader(c.clHeader.toByteArray())
+		}
+	}
+}
+
+func (c *CommitLog) seekAndWriteCommitLogHeader(bytes []byte) {
+	// writes header at the beginning of the file, then seeks
+	// back to current position
+	currentPos := getCurrentPos(c.logWriter)
+	c.logWriter.Seek(0, 0)
+	writeCommitLogHeader(c.logWriter, bytes)
+	c.logWriter.Seek(currentPos, 0)
+}
+
+func writeCommitLogHeader(logWriter *os.File, bytes []byte) {
+	writeInt64(logWriter, int64(len(bytes)))
+	writeBytes(logWriter, bytes)
+}
+
+func (c *CommitLog) maybeRollLog() bool {
+	if getFileSize(c.logWriter) >= config.LogRotationThres {
+		// rolls the current log file over to a new one
+		c.setNextFileName()
+		oldLogFile := c.logWriter.Name()
+		c.logWriter.Close()
+		// point reader/writer to a new commit log file
+		c.logWriter = createCLWriter(c.logFile)
+		// squirrel away the old commit log header
+		clHeaders[oldLogFile] = NewCommitLogHeaderC(c.clHeader)
+		c.clHeader.clear()
+		writeCommitLogHeader(c.logWriter, c.clHeader.toByteArray())
+		return true
+	}
+	return false
+}
+
 // add the specified row to the commit log. This method will
 // reset the file offset to what it is before the start of
 // the operation in case of any problems. This way we can
 // assume that the subsequent commit log entry will override
 // the garbage left over by the previous write.
 func (c *CommitLog) add(row *Row) *CommitLogContext {
+	curPos := int64(-1)
+	buf := make([]byte, 0)
 	// serialize the row
-	buf := row.toByteArray()
-	//
-	currentPos, err := c.logWriter.Seek(0, 0)
-	if err != nil {
-		log.Fatal(err)
-	}
-	c.logWriter.Seek(currentPos, 0)
-	cLogCtx := NewCommitLogContext(c.logFile, currentPos)
-	// update the header
-	c.updateHeader(row)
-	// write key (table name)
-	writeString(c.logWriter, c.table)
-	// write row bytes
+	rowSerialize(row, buf)
+	curPos = getCurrentPos(c.logWriter)
+	cLogCtx := NewCommitLogContext(c.logFile, curPos)
+	// update header
+	c.maybeUpdateHeader(row)
+	writeInt64(c.logWriter, int64(len(buf)))
 	writeBytes(c.logWriter, buf)
-	// flush to disk
-	err = c.logWriter.Sync()
-	if err != nil {
-		log.Print(err)
-	}
-	fileInfo, err := c.logWriter.Stat()
-	if err != nil {
-		log.Print(err)
-	}
-	// length in bytes
-	fileSize := fileInfo.Size()
-	c.checkThresholdAndRollLog(fileSize)
-	// reset file offset if any error occurs TODO
+	c.maybeRollLog()
 	return cLogCtx
 }
 
@@ -327,55 +353,55 @@ func writeBytesB(buf []byte, b []byte) int {
 	return 4 + len(b)
 }
 
-func (c *CommitLog) checkThresholdAndRollLog(fileSize int64) {
-	if fileSize >= config.LogRotationThres || c.forcedRollOver {
-		// rolls the current log file over to a new one
-		c.setNextFileName()
-		oldLogFile := c.logWriter.Name()
-		c.logWriter.Close()
-		// change logWriter to new log file
-		c.logWriter = c.createWriter(c.logFile)
-		// save old log header
-		clHeaders[oldLogFile] = c.clHeader.copy()
-		// zero out positions in old file log header
-		c.clHeader.zeroPositions()
-		c.writeCommitLogHeaderB(c.clHeader.toByteArray(), false)
-		// Get the list of files in commit log dir if it is greater than a
-		// certain number. Force flush all the column families that way we
-		// ensure that a slowly populated column family is not screwing up
-		// by accumulating the commit log. TODO
-	}
-}
+// func (c *CommitLog) checkThresholdAndRollLog(fileSize int64) {
+// 	if fileSize >= config.LogRotationThres || c.forcedRollOver {
+// 		// rolls the current log file over to a new one
+// 		c.setNextFileName()
+// 		oldLogFile := c.logWriter.Name()
+// 		c.logWriter.Close()
+// 		// change logWriter to new log file
+// 		c.logWriter = c.createWriter(c.logFile)
+// 		// save old log header
+// 		clHeaders[oldLogFile] = c.clHeader.copy()
+// 		// zero out positions in old file log header
+// 		c.clHeader.zeroPositions()
+// 		c.writeCommitLogHeaderB(c.clHeader.toByteArray(), false)
+// 		// Get the list of files in commit log dir if it is greater than a
+// 		// certain number. Force flush all the column families that way we
+// 		// ensure that a slowly populated column family is not screwing up
+// 		// by accumulating the commit log. TODO
+// 	}
+// }
 
-func (c *CommitLog) updateHeader(row *Row) {
-	// update the header of the commit log if
-	// a new column family is encounter for the
-	// first time
-	table := openTable(c.table)
-	for cName := range row.columnFamilies {
-		id := table.tableMetadata.cfIDMap[cName]
-		if c.clHeader.header[id] == 0 || (c.clHeader.header[id] == 1 &&
-			c.clHeader.position[id] == 0) {
-			// really ugly workaround for getting file current position
-			// but I cannot find other way :(
-			currentPos, err := c.logWriter.Seek(0, 0)
-			if err != nil {
-				log.Fatal(err)
-			}
-			c.logWriter.Seek(currentPos, 0)
-			c.clHeader.turnOn(id, currentPos)
-			c.writeCommitLogHeaderB(c.clHeader.toByteArray(), true)
-		}
-	}
-}
+// func (c *CommitLog) updateHeader(row *Row) {
+// 	// update the header of the commit log if
+// 	// a new column family is encounter for the
+// 	// first time
+// 	table := openTable(c.table)
+// 	for cName := range row.columnFamilies {
+// 		id := table.tableMetadata.cfIDMap[cName]
+// 		if c.clHeader.header[id] == 0 || (c.clHeader.header[id] == 1 &&
+// 			c.clHeader.position[id] == 0) {
+// 			// really ugly workaround for getting file current position
+// 			// but I cannot find other way :(
+// 			currentPos, err := c.logWriter.Seek(0, 0)
+// 			if err != nil {
+// 				log.Fatal(err)
+// 			}
+// 			c.logWriter.Seek(currentPos, 0)
+// 			c.clHeader.turnOn(id, currentPos)
+// 			c.writeCommitLogHeaderB(c.clHeader.toByteArray(), true)
+// 		}
+// 	}
+// }
 
-func (c *CommitLog) onMemtableFlush(cf string, cLogCtx *CommitLogContext) {
+func (c *CommitLog) onMemtableFlush(tableName, cf string, cLogCtx *CommitLogContext) {
 	// Called on memtable flush to add to the commit log a token
 	// indicating that this column family has been flushed.
 	// The bit flag associated with this column family is set
 	// in the header and this is used to decide if the log
 	// file can be deleted.
-	table := openTable(c.table)
+	table := openTable(tableName)
 	id := table.tableMetadata.cfIDMap[cf]
 	c.discard(cLogCtx, id)
 }
@@ -409,26 +435,27 @@ func getCreationTime(name string) int64 {
 	return num
 }
 
+// delete log segments whose contents have
+// been turned into SSTables
 func (c *CommitLog) discard(cLogCtx *CommitLogContext, id int) {
 	// Check if old commit logs can be deleted.
-	commitLogHeader, ok := clHeaders[cLogCtx.file]
+	header, ok := clHeaders[cLogCtx.file]
 	if !ok {
 		if c.logFile == cLogCtx.file {
 			// we are dealing with the current commit log
-			commitLogHeader = c.clHeader
+			header = c.clHeader
 			clHeaders[cLogCtx.file] = c.clHeader
 		} else {
 			return
 		}
 	}
 	//
-	commitLogHeader.turnOff(id)
+	// commitLogHeader.turnOff(id)
 	oldFiles := make([]string, 0)
 	for key := range clHeaders {
 		oldFiles = append(oldFiles, key)
 	}
 	sort.Sort(ByTime(oldFiles))
-	listOfDeletedFiles := make([]string, 0)
 	// Loop through all the commit log files in the history.
 	// Process the files that are older than the one in the
 	// context. For each of these files the header needs to
@@ -444,25 +471,24 @@ func (c *CommitLog) discard(cLogCtx *CommitLogContext, id int) {
 			// from where the commit log needs to be read.
 			// When a flush occurs we turn off perform &
 			// operation and then turn on with the new position.
-			commitLogHeader.turnOn(id, cLogCtx.position)
-			c.writeCommitLogHeaderC(cLogCtx.file, commitLogHeader.toByteArray())
-			break
-		} else {
-			oldCommitLogHeader := clHeaders[oldFile]
-			oldCommitLogHeader.and(commitLogHeader)
-			if oldCommitLogHeader.isSafeToDelete() {
-				log.Printf("Deleting commit log: %v\n", oldFile)
-				err := os.Remove(oldFile)
-				if err != nil {
-					log.Fatal(err)
-				}
-				listOfDeletedFiles = append(listOfDeletedFiles, oldFile)
+			header.turnOn(id, cLogCtx.position)
+			if oldFile == c.logFile {
+				c.seekAndWriteCommitLogHeader(header.toByteArray())
 			} else {
-				c.writeCommitLogHeaderC(oldFile, oldCommitLogHeader.toByteArray())
+				c.writeOldCommitLogHeader(cLogCtx.file, header)
 			}
+			break
 		}
-	}
-	for _, deletedFile := range listOfDeletedFiles {
-		delete(clHeaders, deletedFile)
+		header.turnOff(id)
+		if header.isSafeToDelete() {
+			log.Printf("Deleting commit log: %v\n", oldFile)
+			err := os.Remove(oldFile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			delete(clHeaders, oldFile)
+		} else {
+			c.writeOldCommitLogHeader(oldFile, header)
+		}
 	}
 }

@@ -68,3 +68,14 @@ func (r *Row) toByteArray() []byte {
 func (r *Row) clear() {
 	r.columnFamilies = make(map[string]*ColumnFamily)
 }
+
+func rowSerialize(row *Row, dos []byte) {
+	writeStringB(dos, row.table)
+	writeStringB(dos, row.key)
+	columnFamilies := row.getColumnFamilies()
+	size := len(columnFamilies)
+	writeInt32B(dos, int32(size))
+	for _, cf := range columnFamilies {
+		CFSerializer.serialize(cf, dos)
+	}
+}

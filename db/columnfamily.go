@@ -99,6 +99,10 @@ func (cf *ColumnFamily) isSuper() bool {
 	return cf.ColumnType == "Super"
 }
 
+func (cf *ColumnFamily) getColumn(name string) IColumn {
+	return cf.Columns[name]
+}
+
 func (cf *ColumnFamily) getSize() int32 {
 	if cf.size == 0 {
 		for cfName := range cf.Columns {

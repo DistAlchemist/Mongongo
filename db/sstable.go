@@ -20,38 +20,6 @@ import (
 )
 
 /**
- * SSTable structure borrowed from Cassandra:
- * struct SSTable stores data on disk in sorted fashion.
- * However, the sorting is upto the application. This
- * class expects keys to be handed to it in sorted order.
- * SSTable is broken up into blocks where each block
- * contains 128 keys. At the end of the file, the block
- * index is written which contains the offsets to the keys
- * in the block. SSTable also maintains an index file to
- * which every 128th key is written with a pointer to the
- * block index which is the block that actually contains
- * the key. This index file is then read and maintained in
- * memory. SSTable is append only and immutable. SSTable
- * on disk looks as follows: (graph borrowed from Cassandra)
- *                +------------------+
- *                |------------------|<--+
- *                |                  |   |  BLOCK-INDEX PTR
- *                |                  |   |
- *                |------------------|---+
- *                |------------------|<--+
- *                |                  |   |
- *                |                  |   |  BLOCK-INDEX PTR
- *                |                  |   |
- *                |------------------|---+
- *                |------------------|<--+
- *                |                  |   |
- *                |                  |   |
- *                |                  |   | BLOCK-INDEX PTR
- *                |                  |   |
- *                |------------------|   |
- *                |------------------|---+
- *                |------------------|---> BLOOM-FILTER
- * version-info <-+-------|----------+-> relative offset to last block index.
  */
 var (
 	// SSTableTmpFile is the tmp file name for sstable

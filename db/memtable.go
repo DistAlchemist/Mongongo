@@ -56,26 +56,13 @@ func NewMemtable(table, cfName string) *Memtable {
 	return m
 }
 
-// put data into the memtable
-// flush memtable to disk when the size exceeds the threshold
-func (m *Memtable) put(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
-	if m.isThresholdViolated(key) {
-		// flush memtable to disk as SSTable if size excedes the limit
-		m.mu.Lock()
-		defer m.mu.Unlock()
-		cfStore := openTable(m.tableName).columnFamilyStores[m.cfName]
-		if !m.isFrozen {
-			m.isFrozen = true
-			// submit memtable flush
-			GetMemtableManager().submit(cfStore.columnFamilyName, m, cLogCtx)
-			cfStore.switchMemtable(key, columnFamily, cLogCtx)
-		} else {
-			cfStore.apply(key, columnFamily, cLogCtx)
-		}
-	} else {
-		// submit task to put key-cf to memtable
-		go m.runResolve(key, columnFamily)
+func (m *Memtable) put(key string, columnFamily *ColumnFamily) {
+	// should only be called by ColumnFamilyStore.apply
+	if m.isFrozen == false {
+		log.Fatal("memtable is frozen!")
 	}
+	m.isDirty = true
+	m.runResolve(key, columnFamily)
 }
 
 func (m *Memtable) runResolve(key string, columnFamily *ColumnFamily) {
@@ -88,6 +75,7 @@ func (m *Memtable) runResolve(key string, columnFamily *ColumnFamily) {
 		newObjectCount := oldCf.getColumnCount()
 		m.resolveSize(oldSize, newSize)
 		m.resolveCount(oldObjectCount, newObjectCount)
+		oldCf.deleteCF(columnFamily)
 	} else {
 		m.columnFamilies[key] = *columnFamily
 		atomic.AddInt32(&m.currentSize, columnFamily.size+int32(len(key)))
@@ -103,9 +91,8 @@ func (m *Memtable) resolveCount(oldCount, newCount int) {
 	atomic.AddInt32(&m.currentObjectCnt, int32(newCount-oldCount))
 }
 
-func (m *Memtable) isThresholdViolated(key string) bool {
-	bVal := false
-	if m.currentSize >= m.threshold || m.currentObjectCnt >= m.thresholdCnt || bVal || key == m.flushKey {
+func (m *Memtable) isThresholdViolated() bool {
+	if m.currentSize >= m.threshold || m.currentObjectCnt >= m.thresholdCnt {
 		return true
 	}
 	return false

@@ -52,3 +52,7 @@ func (t *TableMetadata) isValidColumnFamily(cfName string) bool {
 func (t *TableMetadata) getSize() int {
 	return len(t.cfIDMap)
 }
+
+func (t *TableMetadata) getColumnFamilyID(cfName string) int {
+	return t.cfIDMap[cfName]
+}

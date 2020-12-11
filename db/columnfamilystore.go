@@ -45,6 +45,7 @@ type ColumnFamilyStore struct {
 	// to generate the next index for a SSTable
 	fileIdxGenerator int32
 	readStats        []int64
+	writeStates      []int64
 	// memtables associated with this cfStore
 	memtable       *Memtable
 	binaryMemtable *BinaryMemtable
@@ -74,6 +75,7 @@ func NewColumnFamilyStore(table, columnFamily string) *ColumnFamilyStore {
 	c.isCompacting = false
 	c.isSuper = config.GetColumnTypeTableName(table, columnFamily) == "Super"
 	c.readStats = make([]int64, 0)
+	c.writeStates = make([]int64, 0)
 	// Get all data files associated with old Memtables for this table.
 	// The names are <CfName>-<index>-Data.db, ...
 	// The max is n and increment it to be used as the next index.
@@ -770,20 +772,35 @@ func (c *ColumnFamilyStore) getColumnFamily(filter QueryFilter) *ColumnFamily {
 func (c *ColumnFamilyStore) apply(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
 	// c.memtable.mu.Lock()
 	// defer c.memtable.mu.Unlock()
-	c.memtable.put(key, columnFamily, cLogCtx)
+	// c.memtable.put(key, columnFamily, cLogCtx)
+	start := getCurrentTimeInMillis()
+	initialMemtable := c.getMemtableThreadSafe()
+	if initialMemtable.isThresholdViolated() {
+		c.switchMemtableN(initialMemtable, cLogCtx)
+	}
+	c.memMu.Lock()
+	defer c.memMu.Unlock()
+	c.memtable.put(key, columnFamily)
+	c.writeStates = append(c.writeStates, getCurrentTimeInMillis()-start)
 }
 
-func (c *ColumnFamilyStore) switchMemtable(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
-	// Used on start up when we are recovering from logs
-	c.memtable.mu.Lock()
-	c.memtable = NewMemtable(c.tableName, c.columnFamilyName)
-	c.memtable.mu.Unlock()
-	if key != c.memtable.flushKey {
-		c.memtable.mu.Lock()
-		c.memtable.put(key, columnFamily, cLogCtx)
-		c.memtable.mu.Unlock()
-	}
+func (c *ColumnFamilyStore) getMemtableThreadSafe() *Memtable {
+	c.memMu.RLock()
+	defer c.memMu.RUnlock()
+	return c.memtable
 }
+
+// func (c *ColumnFamilyStore) switchMemtable(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
+// 	// Used on start up when we are recovering from logs
+// 	c.memtable.mu.Lock()
+// 	c.memtable = NewMemtable(c.tableName, c.columnFamilyName)
+// 	c.memtable.mu.Unlock()
+// 	if key != c.memtable.flushKey {
+// 		c.memtable.mu.Lock()
+// 		c.memtable.put(key, columnFamily, cLogCtx)
+// 		c.memtable.mu.Unlock()
+// 	}
+// }
 
 func (c *ColumnFamilyStore) switchMemtableN(oldMemtable *Memtable, ctx *CommitLogContext) {
 	// N stands for new
@@ -830,7 +847,7 @@ func (c *ColumnFamilyStore) onMemtableFlush(cLogCtx *CommitLogContext) {
 	// to disk. This method informs the commitlog that a particular
 	// columnFamily is being flushed to disk.
 	if cLogCtx.isValidContext() {
-		openCommitLog(c.tableName).onMemtableFlush(c.columnFamilyName, cLogCtx)
+		openCommitLogE().onMemtableFlush(c.tableName, c.columnFamilyName, cLogCtx)
 	}
 }
 

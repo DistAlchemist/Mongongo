@@ -117,6 +117,11 @@ func NewColumn(name, value string, timestamp int64, deleteMark bool) Column {
 	return c
 }
 
+// NewColumnKV ..
+func NewColumnKV(name, value string) Column {
+	return NewColumn(name, value, 0, false)
+}
+
 func (c Column) toByteArray() []byte {
 	buf := make([]byte, 0)
 	// write column name length
