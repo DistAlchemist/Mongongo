@@ -53,6 +53,18 @@ func (e *EndPointState) GetApplicationState(key string) *ApplicationState {
 	return e.applicationState[key]
 }
 
+// AddApplicationState ...
 func (e *EndPointState) AddApplicationState(key string, appState *ApplicationState) {
 	e.applicationState[key] = appState
+}
+
+// SetHeartBeatState ...
+func (e *EndPointState) SetHeartBeatState(hbState *HeartBeatState) {
+	e.UpdateTimestamp()
+	e.hbState = hbState
+}
+
+// UpdateTimestamp ...
+func (e *EndPointState) UpdateTimestamp() {
+	e.updateTimestamp = getCurrentTimeInMillis()
 }

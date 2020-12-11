@@ -264,7 +264,7 @@ func (g *Gossiper) sendGossip(message *GossipDigestSynArgs, epSet map[network.En
 	to := liveEndPoints[index]
 	log.Printf("Sending a GossipDigestSynMessage to %v ...\n", to)
 	reply := &GossipDigestSynReply{}
-	client, err := rpc.DialHTTP("tcp", to.HostName+":"+config.ControlPort)
+	client, err := rpc.DialHTTP("udp", to.HostName+":"+config.ControlPort)
 	if err != nil {
 		log.Fatal("dialing: ", err)
 	}
@@ -378,6 +378,143 @@ func (g *Gossiper) notifyFailureDetector(gDigests []*GossipDigest) {
 			}
 		}
 
+	}
+}
+
+func (g *Gossiper) applyStateLocally(epStateMap map[network.EndPoint]*EndPointState) {
+	for ep := range epStateMap {
+		if ep == *g.localEndPoint {
+			continue
+		}
+		localEpStatePtr := g.endPointStateMap[ep]
+		remoteState := epStateMap[ep]
+		// if state does not exist, just add it.
+		// if it does, then add it only if the version
+		// of the remote copy is greater than the local copy
+		if localEpStatePtr != nil {
+			localGeneration := localEpStatePtr.GetHeartBeatState().generation
+			remoteGeneration := remoteState.GetHeartBeatState().generation
+			if remoteGeneration > localGeneration {
+				g.handleNewJoin(ep, remoteState)
+			} else if remoteGeneration == localGeneration {
+				// manage the membership state
+				localMaxVersion := getMaxEndPointStateVersion(localEpStatePtr)
+				remoteMaxVersion := getMaxEndPointStateVersion(remoteState)
+				if remoteMaxVersion > localMaxVersion {
+					g.markAlive(ep, localEpStatePtr)
+					g.applyHeartBeatStateLocally(ep, localEpStatePtr, remoteState)
+					// apply ApplicationState
+					g.applyApplicationStateLocally(ep, localEpStatePtr, remoteState)
+				}
+			}
+		} else {
+			g.handleNewJoin(ep, remoteState)
+		}
+	}
+}
+
+func (g *Gossiper) applyApplicationStateLocally(addr network.EndPoint, localStatePtr *EndPointState, remoteStatePtr *EndPointState) {
+	localAppStateMap := localStatePtr.applicationState
+	remoteAppStateMap := remoteStatePtr.applicationState
+	for remoteKey, remoteAppState := range remoteAppStateMap {
+		localAppState := localAppStateMap[remoteKey]
+		// if state doesn't exist locally for this key then
+		// just apply it
+		if localAppState == nil {
+			localStatePtr.AddApplicationState(remoteKey, remoteAppState)
+			// notify interested parties of endpoint state change
+			deltaState := NewEndPointState(localStatePtr.GetHeartBeatState())
+			deltaState.AddApplicationState(remoteKey, remoteAppState)
+			g.doNotifications(addr, deltaState)
+			continue
+		}
+		remoteGeneration := remoteStatePtr.GetHeartBeatState().generation
+		localGeneration := localStatePtr.GetHeartBeatState().generation
+		// if the remoteGeneration is greater than localGeneration
+		// then apply state blindly
+		if remoteGeneration > localGeneration {
+			localStatePtr.AddApplicationState(remoteKey, remoteAppState)
+			// notify interested parties of endpoint state change
+			deltaState := NewEndPointState(localStatePtr.GetHeartBeatState())
+			deltaState.AddApplicationState(remoteKey, remoteAppState)
+			g.doNotifications(addr, deltaState)
+			continue
+		}
+		// if the generation are the same then apply state
+		// if the remote version is greater than local version
+		if remoteGeneration == localGeneration {
+			remoteVersion := remoteAppState.GetStateVersion()
+			localVersion := localAppState.GetStateVersion()
+			if remoteVersion > localVersion {
+				localStatePtr.AddApplicationState(remoteKey, remoteAppState)
+				// notify interested parties of endpoint state change
+				deltaState := NewEndPointState(localStatePtr.GetHeartBeatState())
+				deltaState.AddApplicationState(remoteKey, remoteAppState)
+				g.doNotifications(addr, deltaState)
+			}
+		}
+	}
+}
+
+func (g *Gossiper) applyHeartBeatStateLocally(addr network.EndPoint, localState *EndPointState,
+	remoteState *EndPointState) {
+	localHbState := localState.GetHeartBeatState()
+	remoteHbState := remoteState.GetHeartBeatState()
+	if remoteHbState.generation > localHbState.generation {
+		g.markAlive(addr, localState)
+		localState.SetHeartBeatState(remoteHbState)
+	}
+	if localHbState.generation == remoteHbState.generation {
+		if remoteHbState.GetVersion() > localHbState.GetVersion() {
+			oldVersion := localHbState.GetVersion()
+			localState.SetHeartBeatState(remoteHbState)
+			log.Printf("Updating heartbeat state version to %v from %v for %v ...\n",
+				localState.GetHeartBeatState().GetVersion(),
+				oldVersion, addr)
+		}
+	}
+
+}
+
+func (g *Gossiper) markAlive(addr network.EndPoint, localState *EndPointState) {
+	log.Printf("marking as alive %v\n", addr)
+	if localState.isAlive == false {
+		g.isAlive(addr, localState, true)
+		log.Printf("Endpoint %v is now UP\n", addr)
+	}
+}
+
+func (g *Gossiper) handleNewJoin(ep network.EndPoint, epState *EndPointState) {
+	log.Printf("Node %v has now joined\n", ep)
+	// mark this endpoint as "live"
+	g.endPointStateMap[ep] = epState
+	g.isAlive(ep, epState, true)
+	// notofy interested parties about state change
+	g.doNotifications(ep, epState)
+}
+
+func (g *Gossiper) notifyFailureDetectorM(remoteEpStateMap map[network.EndPoint]*EndPointState) {
+	fd := GetFailureDetector()
+	for endpoint := range remoteEpStateMap {
+		remoteEndPointState := remoteEpStateMap[endpoint]
+		localEndPointState := g.endPointStateMap[endpoint]
+		// if the local endpoint state exists then report to the
+		// FD only if the versions workout
+		if localEndPointState != nil {
+			localGeneration := localEndPointState.GetHeartBeatState().generation
+			remoteGeneration := remoteEndPointState.GetHeartBeatState().generation
+			if remoteGeneration > localGeneration {
+				fd.report(endpoint)
+				continue
+			}
+			if remoteGeneration == localGeneration {
+				localVersion := getMaxEndPointStateVersion(localEndPointState)
+				remoteVersion := remoteEndPointState.GetHeartBeatState().GetVersion()
+				if remoteVersion > int32(localVersion) {
+					fd.report(endpoint)
+				}
+			}
+		}
 	}
 }
 
@@ -568,6 +705,27 @@ func (g *Gossiper) makeGossipDigestSynMessage(gDigest []*GossipDigest) *GossipDi
 	return p
 }
 
+// GossipDigestAckArgs ...
+type GossipDigestAckArgs struct {
+	From       network.EndPoint
+	ClusterID  string
+	GDigest    []*GossipDigest
+	epStateMap map[network.EndPoint]*EndPointState
+}
+
+// GossipDigestAckReply ...
+type GossipDigestAckReply struct{}
+
+func (g *Gossiper) makeGossipDigestAckMessage(gDigestList []*GossipDigest,
+	epStateMap map[network.EndPoint]*EndPointState) *GossipDigestAckArgs {
+	p := &GossipDigestAckArgs{}
+	p.From = *g.localEndPoint
+	p.ClusterID = config.ClusterName
+	p.GDigest = gDigestList
+	p.epStateMap = epStateMap
+	return p
+}
+
 // OnGossipDigestSyn is an rpc
 func (g *Gossiper) OnGossipDigestSyn(args *GossipDigestSynArgs, reply *GossipDigestSynReply) error {
 	from := args.From
@@ -582,7 +740,80 @@ func (g *Gossiper) OnGossipDigestSyn(args *GossipDigestSynArgs, reply *GossipDig
 	deltaGossipDigestList := make([]*GossipDigest, 0)
 	deltaEpStateMap := make(map[network.EndPoint]*EndPointState)
 	g.examineGossiper(gDigestList, deltaGossipDigestList, deltaEpStateMap)
-	// gDigestAck := g.makeGossipDigestAckMessage(deltaGossipDigestList, deltaEpStateMap)
+	message := g.makeGossipDigestAckMessage(deltaGossipDigestList, deltaEpStateMap)
 	// send message
+	to := from
+	log.Printf("Sending a GossipDigestAckMessage to %v ...\n", to)
+	ackReply := &GossipDigestAckReply{}
+	client, err := rpc.DialHTTP("udp", to.HostName+":"+config.ControlPort)
+	if err != nil {
+		log.Fatal("dialing: ", err)
+	}
+	client.Go("Gossiper.OnGossipDigestAck", message, ackReply, nil)
+	return nil
+}
+
+// GossipDigestAck2Args ...
+type GossipDigestAck2Args struct {
+	From       network.EndPoint
+	ClusterID  string
+	epStateMap map[network.EndPoint]*EndPointState
+}
+
+// GossipDigestAck2Reply ...
+type GossipDigestAck2Reply struct{}
+
+func (g *Gossiper) makeGossipDigestAck2Message(epStateMap map[network.EndPoint]*EndPointState) *GossipDigestAck2Args {
+	p := &GossipDigestAck2Args{}
+	p.From = *g.localEndPoint
+	p.ClusterID = config.ClusterName
+	p.epStateMap = epStateMap
+	return p
+}
+
+// OnGossipDigestAck is an rpc
+func (g *Gossiper) OnGossipDigestAck(args *GossipDigestAckArgs, reply *GossipDigestAckReply) error {
+	from := args.From
+	log.Printf("received a GossipDigestAckMessage from %v\n", from)
+	gDigestList := args.GDigest
+	epStateMap := args.epStateMap
+	if len(epStateMap) > 0 {
+		// notify the Failure Detector
+		g.notifyFailureDetectorM(epStateMap)
+		g.applyStateLocally(epStateMap)
+	}
+	// get the state required to send to this gossipee -
+	// construct GossipDigestAck2Message
+	deltaEpStateMap := make(map[network.EndPoint]*EndPointState)
+	for _, gDigest := range gDigestList {
+		addr := gDigest.endPoint
+		localEpStatePtr := g.getStateForVersionBiggerThan(addr, gDigest.maxVersion)
+		if localEpStatePtr != nil {
+			deltaEpStateMap[addr] = localEpStatePtr
+		}
+	}
+	message := g.makeGossipDigestAck2Message(deltaEpStateMap)
+	// send message
+	to := from
+	log.Printf("Sending a GossipDigestAck2Message to %v ...\n", to)
+	ackReply := &GossipDigestAckReply{}
+	client, err := rpc.DialHTTP("udp", to.HostName+":"+config.ControlPort)
+	if err != nil {
+		log.Fatal("dialing: ", err)
+	}
+	client.Go("Gossiper.OnGossipDigestAck2", message, ackReply, nil)
+	return nil
+}
+
+// OnGossipDigestAck2 is an rpc
+func (g *Gossiper) OnGossipDigestAck2(args *GossipDigestAck2Args, reply *GossipDigestAck2Reply) error {
+	from := args.From
+	log.Printf("received a GossipDigestAck2Message from %v\n", from)
+	epStateMap := args.epStateMap
+	if len(epStateMap) > 0 {
+		// notify the Failure Detector
+		g.notifyFailureDetectorM(epStateMap)
+		g.applyStateLocally(epStateMap)
+	}
 	return nil
 }
