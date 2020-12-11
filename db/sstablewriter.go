@@ -25,11 +25,11 @@ func NewSSTableWriter(filename string, keyCount int) *SSTableWriter {
 	s := &SSTableWriter{}
 	s.SSTable = NewSSTable(filename)
 	var err error
-	s.dataFile, err = os.Open(s.dataFileName)
+	s.dataFile, err = os.OpenFile(s.dataFileName, os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
-	s.indexFile, err = os.Open(s.indexFilename(s.dataFileName))
+	s.indexFile, err = os.OpenFile(s.indexFilename(s.dataFileName), os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func (s *SSTableWriter) append(decoratedKey string, buf []byte) {
 func (s *SSTableWriter) closeAndOpenReader() *SSTableReader {
 	// renames temp SSTable files to valid data, index and bloom filter files
 	// bloom filter file
-	fos, err := os.Open(s.filterFilename(s.dataFileName))
+	fos, err := os.OpenFile(s.filterFilename(s.dataFileName), os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}

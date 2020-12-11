@@ -15,6 +15,7 @@ import (
 	"github.com/willf/bitset"
 
 	"github.com/DistAlchemist/Mongongo/config"
+	"github.com/DistAlchemist/Mongongo/dht"
 	"github.com/DistAlchemist/Mongongo/utils"
 )
 
@@ -104,6 +105,7 @@ type SSTable struct {
 	indexKeysWritten   int
 	indexInterval      int
 	firstBlockPosition int64
+	partitioner        dht.IPartitioner
 }
 
 // NewSSTable initializes a SSTable
@@ -117,6 +119,11 @@ func NewSSTable(filename string) *SSTable {
 	//  var/storage/data/tableName/<columnFamilyName>-<index>-Data.db
 	s.dataFileName = filename
 	s.columnFamilyName = getColumnFamilyFromFullPath(filename)
+	if config.HashingStrategy == config.Random {
+		s.partitioner = dht.NewRandomPartitioner()
+	} else {
+		s.partitioner = dht.NewOPP()
+	}
 	// _, ok := SSTIndexMetadataMap[s.dataFileName]
 	// if !ok {
 	// 	s.loadIndexFile() // mainly load bloom filter and index file

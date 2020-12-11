@@ -6,12 +6,13 @@
 package db
 
 import (
+	"log"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/DistAlchemist/Mongongo/config"
-	"github.com/DistAlchemist/Mongongo/utils"
 )
 
 // Memtable specifies memtable
@@ -28,6 +29,8 @@ type Memtable struct {
 	// creation time of this memtable
 	creationTime   int64
 	isFrozen       bool
+	isDirty        bool
+	isFlushed      bool
 	columnFamilies map[string]ColumnFamily
 	// lock and condition for notifying new clients about Memtable switches
 	mu   sync.Mutex
@@ -43,6 +46,8 @@ func NewMemtable(table, cfName string) *Memtable {
 	m.currentSize = 0
 	m.currentObjectCnt = 0
 	m.isFrozen = false
+	m.isDirty = false
+	m.isFlushed = false
 	m.columnFamilies = make(map[string]ColumnFamily)
 	m.cond = sync.NewCond(&m.mu)
 	m.tableName = table
@@ -109,53 +114,76 @@ func (m *Memtable) isThresholdViolated(key string) bool {
 func (m *Memtable) flush(cLogCtx *CommitLogContext) {
 	// flush this memtable to disk
 	cfStore := openTable(m.tableName).columnFamilyStores[m.cfName]
-	if len(m.columnFamilies) == 0 {
-		// This should be called even if size is 0
-		// Because we should try to delete the useless commitlogs
-		// even though there is nothing to flush in memtables for
-		// a given family like Hints etc.
-		cfStore.onMemtableFlush(cLogCtx)
-		return
+	writer := NewSSTableWriter(cfStore.getTmpSSTablePath(), len(m.columnFamilies))
+	// sort keys in the order they would be in when decorated
+	orderedKeys := make([]string, 0)
+	for cfName := range m.columnFamilies {
+		orderedKeys = append(orderedKeys, writer.partitioner.DecorateKey(cfName))
 	}
-	// partitioner type: OrderPreserving or Random
-	pType := config.HashingStrategy
-	dir := config.DataFileDirs[0]
-	filename := cfStore.getNextFileName()
-	ssTable := NewSSTableP(dir, filename, pType)
-	switch pType {
-	case config.Ophf:
-		m.flushForOrderPreservingPartitioner(ssTable, cfStore, cLogCtx)
-	default:
-		m.flushForRandomPartitioner(ssTable, cfStore, cLogCtx)
-	}
-	m.columnFamilies = make(map[string]ColumnFamily)
-}
-
-func (m *Memtable) flushForOrderPreservingPartitioner(ssTable *SSTable, cfStore *ColumnFamilyStore, cLogCtx *CommitLogContext) {
-	// TODO I reckon that I am not going to do it :)
-}
-
-func (m *Memtable) flushForRandomPartitioner(ssTable *SSTable, cfStore *ColumnFamilyStore, cLogCtx *CommitLogContext) {
-	keys := make([]string, 0)
-	for key := range m.columnFamilies {
-		keys = append(keys, key)
-	}
-	// create list of primary keys in sorted order
-	pKeys := createPrimaryKeys(keys)
-	// use this bloom filter to decide if a key exists in a SSTable
-	bf := utils.NewBloomFilter(len(keys), 15)
-	for _, pKey := range pKeys {
-		columnFamily, ok := m.columnFamilies[pKey.key]
-		if !ok {
+	sort.Sort(ByKey(orderedKeys))
+	for _, key := range orderedKeys {
+		k := writer.partitioner.DecorateKey(key)
+		buf := make([]byte, 0)
+		columnFamily, ok := m.columnFamilies[k]
+		if ok {
 			// serialize the cf with column indexes
-			buf := columnFamily.toByteArray()
-			// write the key and value to disk
-			ssTable.append(pKey.key, pKey.hash, buf)
-			bf.Fill(pKey.key)
-			columnFamily.clear()
+			CFSerializer.serializeWithIndexes(&columnFamily, buf)
+			// now write the key and value to disk
+			writer.append(key, buf)
 		}
 	}
-	ssTable.closeBF(bf)
+	ssTable := writer.closeAndOpenReader()
 	cfStore.onMemtableFlush(cLogCtx)
-	cfStore.storeLocation(ssTable.dataFileName, bf)
+	cfStore.storeLocation(ssTable)
+	m.isFlushed = true
+	log.Print("Completed flushing ", ssTable.getFilename())
+}
+
+func (m *Memtable) freeze() {
+	m.isFrozen = true
+}
+
+func reverse(a []IColumn) {
+	for i, j := 0, len(a)-1; i < j; i, j = i+1, j-1 {
+		a[i], a[j] = a[j], a[i]
+	}
+}
+
+// obtain an iterator of columns in this memtable in the specified
+// order starting from a given column
+func (m *Memtable) getSliceIterator(filter *SliceQueryFilter) ColumnIterator {
+	cf, ok := m.columnFamilies[filter.key] // rowKey -> column family
+	var columnFamily *ColumnFamily
+	var columns []IColumn
+	if ok == false {
+		columnFamily = createColumnFamily(m.tableName, filter.path.columnFamilyName)
+		columns = columnFamily.getSortedColumns()
+	} else {
+		columnFamily = cf.cloneMeShallow()
+		columns = cf.getSortedColumns()
+	}
+	if filter.reversed == true {
+		reverse(columns)
+	}
+	var startIColumn IColumn
+	if config.GetColumnTypeTableName(m.tableName, filter.path.columnFamilyName) == "Standard" {
+		startIColumn = NewColumn(string(filter.start), "", 0, false)
+	} else {
+		startIColumn = NewSuperColumn(string(filter.start))
+	}
+	index := 0
+	if len(filter.start) == 0 && filter.reversed {
+		// scan from the largest column in descending order
+		index = 0
+	} else {
+		index = sort.Search(len(columns), func(i int) bool {
+			return columns[i].getName() >= startIColumn.getName()
+		})
+	}
+	startIndex := index
+	return NewAColumnIterator(startIndex, columnFamily, columns)
+}
+
+func (m *Memtable) isClean() bool {
+	return m.isDirty == false
 }

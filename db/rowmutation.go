@@ -6,6 +6,7 @@
 package db
 
 import (
+	"encoding/binary"
 	"log"
 	"strings"
 )
@@ -23,6 +24,22 @@ func NewRowMutation(tableName, rowKey string) RowMutation {
 	rm.TableName = tableName
 	rm.RowKey = rowKey
 	return rm
+}
+
+// NewRowMutationR init it with given row
+func NewRowMutationR(tableName string, row *Row) *RowMutation {
+	rm := &RowMutation{}
+	rm.TableName = tableName
+	rm.RowKey = row.key
+	for _, cf := range row.columnFamilies {
+		rm.AddCF(cf)
+	}
+	return rm
+}
+
+// AddCF adds column family to modification
+func (rm *RowMutation) AddCF(columnFamily *ColumnFamily) {
+	rm.Modification[columnFamily.ColumnFamilyName] = columnFamily
 }
 
 // Add store columnFamilyName and columnName inside rowMutation
@@ -63,4 +80,32 @@ func (rm *RowMutation) Apply(row *Row) {
 		}
 	}
 	table.apply(row)
+}
+
+// ApplyE receives empty argument
+func (rm *RowMutation) ApplyE() {
+	row := NewRowT(rm.TableName, rm.RowKey)
+	rm.Apply(row)
+}
+
+// Delete ...
+func (rm *RowMutation) Delete(path *QueryPath, timestamp int64) {
+	cfName := path.columnFamilyName
+	_, ok := rm.Modification[cfName]
+	if ok {
+		log.Fatal("ColumnFamily " + cfName + " is already being modified")
+	}
+	localDeleteTime := int(getCurrentTimeInMillis() / 1000)
+	columnFamily := createColumnFamily(rm.TableName, cfName)
+	if path.superColumnName == nil && path.columnName == nil {
+		columnFamily.delete(localDeleteTime, timestamp)
+	} else if path.columnName == nil {
+		sc := NewSuperColumn(string(path.superColumnName))
+		sc.markForDeleteAt(localDeleteTime, timestamp)
+		columnFamily.addColumn(sc)
+	} else {
+		b4 := make([]byte, 4)
+		binary.BigEndian.PutUint32(b4, uint32(localDeleteTime))
+		columnFamily.addColumnQP(path, string(b4), timestamp, true)
+	}
 }

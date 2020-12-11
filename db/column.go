@@ -198,6 +198,10 @@ func (c Column) getSubColumns() map[string]IColumn {
 	return nil
 }
 
+func (c Column) mostRecentChangeAt() int64 {
+	return c.Timestamp
+}
+
 // CSerializer ...
 var CSerializer = NewColumnSerializer()
 

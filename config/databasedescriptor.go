@@ -70,6 +70,8 @@ var (
 	RackAware = false
 	// SysTableName is the table name for system
 	SysTableName = "system"
+	// HintsCF is the cf name for hinted handoff
+	HintsCF = "HintsColumnFamily"
 	// Tables for list of table name
 	// currently we cannot change the schema online
 	// this will be improved in the future
@@ -313,4 +315,9 @@ func GetAllDataFileLocationsForTable(table string) []string {
 // GetColumnIndexSize returns size in MB
 func GetColumnIndexSize() int {
 	return ColumnIndexSizeInKB * 1024
+}
+
+// GetTables ...
+func GetTables() []string {
+	return Tables
 }

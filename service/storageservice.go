@@ -31,6 +31,7 @@ type StorageService struct {
 	nodePicker          *locator.RackStrategy
 	partitioner         IPartitioner
 	storageMetadata     *db.StorageMetadata
+	isBootstrapMode     bool
 }
 
 var (
@@ -51,6 +52,8 @@ func GetInstance() *StorageService {
 
 func (ss *StorageService) init() {
 	ss.uptime = time.Now().UnixNano() / int64(time.Millisecond)
+	bootstrap := os.Getenv("bootstrap")
+	ss.isBootstrapMode = bootstrap == "true"
 	ss.storageLoadBalancer = NewStorageLoadBalancer(ss)
 	ss.endpointSnitch = locator.EndPointSnitch{}
 	ss.tokenMetadata = locator.TokenMetadata{}

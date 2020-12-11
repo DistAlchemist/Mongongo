@@ -167,6 +167,16 @@ func (sc SuperColumn) getSubColumns() map[string]IColumn {
 	return sc.Columns
 }
 
+func (sc SuperColumn) mostRecentChangeAt() int64 {
+	res := int64(math.MinInt64)
+	for _, column := range sc.Columns {
+		if column.mostRecentChangeAt() > res {
+			res = column.mostRecentChangeAt()
+		}
+	}
+	return res
+}
+
 // SCSerializer ...
 var SCSerializer = NewSuperColumnSerializer()
 

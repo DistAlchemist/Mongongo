@@ -12,6 +12,7 @@ import (
 
 // Row for key and cf
 type Row struct {
+	table          string
 	key            string
 	columnFamilies map[string]*ColumnFamily
 	size           int32
@@ -24,6 +25,19 @@ func NewRow(key string) *Row {
 	r.columnFamilies = make(map[string]*ColumnFamily)
 	r.size = 0
 	return r
+}
+
+// NewRowT init a Row with given table name and key name
+func NewRowT(table, key string) *Row {
+	r := &Row{}
+	r.table = table
+	r.key = key
+	r.columnFamilies = make(map[string]*ColumnFamily)
+	return r
+}
+
+func (r *Row) getColumnFamilies() map[string]*ColumnFamily {
+	return r.columnFamilies
 }
 
 func (r *Row) addColumnFamily(cf *ColumnFamily) {

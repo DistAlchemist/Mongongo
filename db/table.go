@@ -54,6 +54,34 @@ func NewTable(tableName string) *Table {
 	return t
 }
 
+func (t *Table) get(key string) *Row {
+	// selects the row associated with the given key
+	row := NewRowT(t.tableName, key)
+	for columnFamily := range t.getColumnFamilies() {
+		cf := t.getCF(key, columnFamily)
+		if cf != nil {
+			row.addColumnFamily(cf)
+		}
+	}
+	return row
+}
+
+func (t *Table) getCF(key, cfName string) *ColumnFamily {
+	cfStore, ok := t.columnFamilyStores[cfName]
+	if ok == false {
+		log.Fatal("Column family" + cfName + " has not been defined")
+	}
+	return cfStore.getColumnFamily(NewIdentityQueryFilter(key, NewQueryPathCF(cfName)))
+}
+
+func (t *Table) getColumnFamilies() map[string]int {
+	return t.tableMetadata.cfIDMap
+}
+
+func (t *Table) getColumnFamilyStore(cfName string) *ColumnFamilyStore {
+	return t.columnFamilyStores[cfName]
+}
+
 func getTableMetadataInstance(tableName string) *TableMetadata {
 	tableMetadata, ok := tableMetadataMap[tableName]
 	if !ok {

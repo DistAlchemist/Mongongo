@@ -8,6 +8,7 @@ package db
 import (
 	"log"
 	"os"
+	"sort"
 	"sync"
 	"time"
 
@@ -67,7 +68,7 @@ func NewSSTableReaderI(filename string, indexPositions []*KeyPositionInfo, bf *u
 
 func (s *SSTableReader) loadIndexFile() {
 	/** Index file structure:
-	 * decoreatedKey (int32+string)
+	 * decoratedKey (int32+string)
 	 * index (int64)
 	 * (repeat above two)
 	 * */
@@ -128,6 +129,65 @@ func (s *SSTableReader) delete() {
 	srmu.Lock()
 	defer srmu.Unlock()
 	openedFiles.remove(s.dataFileName)
+}
+
+func (s *SSTableReader) getIndexScanPosition(decoratedKey string) int64 {
+	// get the position in the index file to start scanning
+	// to find the given key (at most indexInterval keys away)
+	if s.indexPositions == nil || len(s.indexPositions) == 0 {
+		log.Fatal("indexPositions for sstable is empty!")
+	}
+	index := sort.Search(len(s.indexPositions), func(i int) bool {
+		return s.partitioner.Compare(decoratedKey, s.indexPositions[i].key) <= 0
+	})
+	if index == len(s.indexPositions) {
+		return s.indexPositions[index-1].position
+	}
+	if s.indexPositions[index].key != decoratedKey {
+		if index == 0 {
+			return -1
+		}
+		// binary search gives us the first index greater
+		// than the key searched for, i.e. its insertion position
+		return s.indexPositions[index-1].position
+	}
+	return s.indexPositions[index].position
+}
+
+func (s *SSTableReader) getPosition(decoratedKey string) int64 {
+	// returns the position in the data file to
+	// find the given key, or -1 if the key is not
+	// present
+	if s.bf.IsPresent(decoratedKey) == false {
+		return -1
+	}
+	start := s.getIndexScanPosition(decoratedKey)
+	if start < 0 {
+		return -1
+	}
+	input, err := os.Open(s.indexFilename(s.dataFileName))
+	if err != nil {
+		log.Fatal(err)
+	}
+	input.Seek(start, 0)
+	i := 0
+	for {
+		indexDecoratedKey, _ := readString(input)
+		position := readInt64(input) // this is file position in Data file
+		v := s.partitioner.Compare(indexDecoratedKey, decoratedKey)
+		if v == 0 {
+			return position
+		}
+		if v > 0 {
+			return -1
+		}
+		i++
+		if i >= SSTIndexInterval {
+			break
+		}
+	}
+	input.Close()
+	return -1
 }
 
 // FileSSTableMap ...

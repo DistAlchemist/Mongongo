@@ -12,8 +12,13 @@ import (
 )
 
 var (
-	mu        sync.Mutex
-	minstance *Manager
+	mu             sync.Mutex
+	minstance      *Manager
+	sysMetadata    *StorageMetadata
+	sysLocationCF  = "LocationInfo"
+	sysLocationKey = "L" // only one row in location cf
+	sysToken       = "Token"
+	sysGeneration  = "Generation"
 )
 
 // Manager manages database
@@ -78,10 +83,32 @@ func storeMetadata(tableToColumnFamily map[string]map[string]config.CFMetaData) 
 // Start reads the system table and retrives the metadata
 // associated with this storage instance. The metadata is
 // stored in a Column Family called LocationInfo which has
-// two columns: "Token" and "Generation".
+// two columns: "Token" and "Generation". This is the token
+// that gets gossiped around and the generation info is used
+// for FD. We also store whether we're in bootstrap mode in
+// a third column.
 func (d *Manager) Start() *StorageMetadata {
-	storageMetadata := &StorageMetadata{}
-	return storageMetadata
+	// storageMetadata := &StorageMetadata{}
+	// return storageMetadata
+	return sysInitMetadata()
+}
+
+func sysInitMetadata() *StorageMetadata {
+	mu.Lock()
+	defer mu.Unlock()
+	if sysMetadata != nil {
+		return sysMetadata
+	}
+	// read the sytem table to retrieve the storage ID
+	// and the generation
+	// table := openTable(config.SysTableName)
+	// filter := NewIdentityQueryFilter(sysLocationKey, NewQueryPathCF(sysLocationCF))
+	// cf = table.getColumnFamilyStore(sysLocationCF).getColumnFamily(filter)
+	// p := dht.RandomPartInstance // hard code here
+	// if cf == nil {
+	// 	token = p.GetDefaultToken()
+	// }
+	return sysMetadata
 }
 
 // StorageMetadata stores id and generation
@@ -103,6 +130,7 @@ type RowMutationArgs struct {
 // RowMutationReply for rm reply structure
 type RowMutationReply struct {
 	Result string
+	Status bool
 }
 
 // // Insert dispatches rowmutation to other replicas

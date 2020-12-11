@@ -51,9 +51,10 @@ type CommitLog struct {
 }
 
 var (
-	clInstance = map[string]*CommitLog{}
-	clHeaders  = map[string]*CommitLogHeader{}
-	clmu       sync.Mutex
+	clInstance  = map[string]*CommitLog{}
+	clSInstance *CommitLog // stands for Single Instance
+	clHeaders   = map[string]*CommitLogHeader{}
+	clmu        sync.Mutex
 )
 
 // CommitLogContext represents the context of commit log
@@ -139,10 +140,28 @@ func (c *CommitLog) writeCLH(bytes []byte, reset bool) {
 	}
 }
 
+func (c *CommitLog) getContext() *CommitLogContext {
+	ctx := NewCommitLogContext(c.logFile, getCurrentPos(c.logWriter))
+	return ctx
+}
+
 // NewCommitLog creates a new commit log
 func NewCommitLog(table string, recoveryMode bool) *CommitLog {
 	c := &CommitLog{}
 	c.table = table
+	c.forcedRollOver = false
+	if !recoveryMode {
+		c.setNextFileName()
+		c.logWriter = c.createWriter(c.logFile)
+		c.writeCommitLogHeader()
+	}
+	return c
+}
+
+// NewCommitLogE creates a new commit log
+func NewCommitLogE(recoveryMode bool) *CommitLog {
+	c := &CommitLog{}
+	// c.table = table
 	c.forcedRollOver = false
 	if !recoveryMode {
 		c.setNextFileName()
@@ -161,6 +180,15 @@ func openCommitLog(table string) *CommitLog {
 		clInstance[table] = commitLog
 	}
 	return commitLog
+}
+
+func openCommitLogE() *CommitLog {
+	clmu.Lock()
+	defer clmu.Unlock()
+	if clSInstance == nil {
+		clSInstance = NewCommitLogE(false)
+	}
+	return clSInstance
 }
 
 // add the specified row to the commit log. This method will

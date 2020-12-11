@@ -81,6 +81,24 @@ func (cf *ColumnFamily) addColumn(column IColumn) {
 	}
 }
 
+// with query path as argument
+// in most places the cf must be part of a query path but
+// here it is ignored.
+func (cf *ColumnFamily) addColumnQP(path *QueryPath, value string, timestamp int64, deleted bool) {
+	var column IColumn
+	if path.superColumnName == nil {
+		column = NewColumn(string(path.columnName), value, timestamp, deleted)
+	} else {
+		column = NewSuperColumn(string(path.superColumnName))
+		column.addColumn(NewColumn(string(path.columnFamilyName), value, timestamp, deleted))
+	}
+	cf.addColumn(column)
+}
+
+func (cf *ColumnFamily) isSuper() bool {
+	return cf.ColumnType == "Super"
+}
+
 func (cf *ColumnFamily) getSize() int32 {
 	if cf.size == 0 {
 		for cfName := range cf.Columns {

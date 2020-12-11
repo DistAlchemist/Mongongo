@@ -24,6 +24,7 @@ type IColumn interface {
 	getValue() []byte
 	getMarkedForDeleteAt() int64
 	getLocalDeletionTime() int
+	mostRecentChangeAt() int64
 }
 
 // IColumnSerializer ...

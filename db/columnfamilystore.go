@@ -26,7 +26,12 @@ import (
 
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/dht"
+	"github.com/DistAlchemist/Mongongo/network"
 	"github.com/DistAlchemist/Mongongo/utils"
+)
+
+var (
+	memtablesPendingFlush = make(map[string][]*Memtable)
 )
 
 // ColumnFamilyStore provides storage specification of
@@ -39,6 +44,7 @@ type ColumnFamilyStore struct {
 	columnFamilyName      string
 	// to generate the next index for a SSTable
 	fileIdxGenerator int32
+	readStats        []int64
 	// memtables associated with this cfStore
 	memtable       *Memtable
 	binaryMemtable *BinaryMemtable
@@ -47,7 +53,9 @@ type ColumnFamilyStore struct {
 	ssTables map[string]*SSTableReader
 	// modification lock used for protecting reads
 	// from compactions
-	rwmu sync.RWMutex
+	rwmu      sync.RWMutex
+	memMu     sync.RWMutex
+	sstableMu sync.RWMutex
 	// flag indicates if a compaction is in process
 	isCompacting bool
 	isSuper      bool
@@ -65,6 +73,7 @@ func NewColumnFamilyStore(table, columnFamily string) *ColumnFamilyStore {
 	c.ssTables = make(map[string]*SSTableReader)
 	c.isCompacting = false
 	c.isSuper = config.GetColumnTypeTableName(table, columnFamily) == "Super"
+	c.readStats = make([]int64, 0)
 	// Get all data files associated with old Memtables for this table.
 	// The names are <CfName>-<index>-Data.db, ...
 	// The max is n and increment it to be used as the next index.
@@ -162,7 +171,7 @@ func (c *ColumnFamilyStore) onStart() {
 	}
 	sort.Sort(fileInfoList(ssTables)) // sort by modification time from old to new
 	// filename of the type:
-	//  var/storage/data/<columnFamilyName>-<index>-Data.db
+	//  var/storage/data/tablename/<cf>-<index>-Data.db
 	for _, file := range ssTables {
 		filename := filenames[file.Name()] // full name with dir path
 		sstable := openSSTableReader(filename)
@@ -176,7 +185,11 @@ func (c *ColumnFamilyStore) onStart() {
 	log.Println("Submitting a major compaction task")
 	// submit initial check-for-compaction request
 	go c.doCompaction()
-	// TODO should also submit periodic minor compaction
+	// schedule hinted handoff
+	if c.tableName == config.SysTableName && c.columnFamilyName == config.HintsCF {
+		getHintedHandOffManagerInstance().submit(c)
+	}
+	// TODO should also submit periodic flush
 }
 
 func (c *ColumnFamilyStore) stageOrderedCompaction(files []string) map[int][]string {
@@ -360,20 +373,6 @@ func (c *ColumnFamilyStore) initPriorityQueue(files []string, ranges []*dht.Rang
 	return pq
 }
 
-// func getNextKey(fs *FileStruct, materialize bool) *FileStruct {
-// 	// Read the next key from the data file, this function will
-// 	// skip then block index and read the next available key into
-// 	// the filestruct that is passed. If it cannot read or a end
-// 	// of file is reached it will return nil.
-// 	_, key, ok := readKV(fs.reader, fs.buf)
-// 	if !ok {
-// 		fs.reader.Close()
-// 		return nil
-// 	}
-// 	fs.key = key
-// 	return fs
-// }
-
 func readKV(file *os.File, buf []byte) (int, string, bool) {
 	// read key length
 	b4 := make([]byte, 4)
@@ -401,6 +400,11 @@ func readKV(file *os.File, buf []byte) (int, string, bool) {
 	file.Read(bv)
 	buf = append(buf, bv...)
 	return 4 + 4 + keySize + valueSize, key, true
+}
+
+func (c *ColumnFamilyStore) getTmpSSTablePath() string {
+	fname := c.getTmpFileName()
+	return config.GetDataFileLocationForTable(c.tableName, 0) + string(os.PathSeparator) + fname
 }
 
 func (c *ColumnFamilyStore) getTmpFileName() string {
@@ -449,14 +453,17 @@ func (c *ColumnFamilyStore) merge(columnFamilies []*ColumnFamily) {
 
 func resolveAndRemoveDeleted(columnFamilies []*ColumnFamily) *ColumnFamily {
 	cf := resolve(columnFamilies)
-	return removeDeleted(cf)
+	return removeDeletedGC(cf)
 }
 
-func removeDeleted(cf *ColumnFamily) *ColumnFamily {
+func removeDeletedGC(cf *ColumnFamily) *ColumnFamily {
+	return removeDeleted(cf, getDefaultGCBefore())
+}
+
+func removeDeleted(cf *ColumnFamily, gcBefore int) *ColumnFamily {
 	if cf == nil {
 		return nil
 	}
-	gcBefore := int(time.Now().UnixNano()/int64(time.Second) - int64(config.GcGraceInSeconds))
 	// in case of a timestamp tie.
 	for cname, c := range cf.Columns {
 		_, ok := c.(SuperColumn)
@@ -678,6 +685,88 @@ func (c *ColumnFamilyStore) doCompaction() int {
 	return filesCompacted
 }
 
+func getCurrentTimeInMillis() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
+
+func (c *ColumnFamilyStore) getColumnFamilyGC(filter QueryFilter, gcBefore int) *ColumnFamily {
+	// get a list of columns starting from a given column, in a specified order
+	// only the latest version of a column is returned
+	start := getCurrentTimeInMillis()
+	// if we are querying subcolumns of a supercolumn, fetch the
+	// supercolumn with NameQueryFilter, then filter in-memory
+	if filter.getPath().superColumnName != nil {
+		nameFilter := NewNamesQueryFilter(
+			filter.getKey(),
+			NewQueryPathCF(c.columnFamilyName),
+			filter.getPath().superColumnName)
+		cf := c.getColumnFamily(nameFilter)
+		if cf == nil || cf.getColumnCount() == 0 {
+			return cf
+		}
+		sc := cf.getSortedColumns()[0].(SuperColumn)
+		scFiltered := filter.filterSuperColumn(sc, gcBefore)
+		cfFiltered := cf.cloneMeShallow()
+		cfFiltered.addColumn(scFiltered)
+		c.readStats = append(c.readStats, getCurrentTimeInMillis()-start)
+	}
+	// we are querying top-level, do a merging fetch with indices
+	c.rwmu.RLock()
+	defer c.rwmu.Unlock()
+	iterators := make([]ColumnIterator, 0)
+	iter := filter.getMemColumnIterator(c.memtable)
+	returnCF := iter.getColumnFamily()
+	iterators = append(iterators, iter)
+	// add the memtable being flushed
+	memtables := getUnflushedMemtables(filter.getPath().columnFamilyName)
+	for _, memtable := range memtables {
+		iter = filter.getMemColumnIterator(memtable)
+		returnCF.deleteCF(iter.getColumnFamily())
+		iterators = append(iterators, iter)
+	}
+	// add the SSTables on disk
+	sstables := make([]*SSTableReader, 0)
+	for _, sstable := range c.ssTables {
+		sstables = append(sstables, sstable)
+		iter = filter.getSSTableColumnIterator(sstable)
+		if iter.hasNext() { // initializes iter.CF
+			returnCF.deleteCF(iter.getColumnFamily())
+		}
+		iterators = append(iterators, iter)
+	}
+	collated := NewCollatedIterator(iterators)
+	filter.collectCollatedColumns(returnCF, collated, gcBefore)
+	res := removeDeleted(returnCF, gcBefore)
+	for _, ci := range iterators {
+		ci.close()
+	}
+	c.readStats = append(c.readStats, getCurrentTimeInMillis()-start)
+	return res
+}
+
+func getUnflushedMemtables(cfName string) []*Memtable {
+	return getMemtablePendingFlushNotNull(cfName)
+}
+
+func getMemtablePendingFlushNotNull(columnFamilyName string) []*Memtable {
+	memtables, ok := memtablesPendingFlush[columnFamilyName]
+	if ok == false {
+		memtablesPendingFlush[columnFamilyName] = make([]*Memtable, 0)
+		// might not be the object we just put, if there was a race
+		memtables = memtablesPendingFlush[columnFamilyName]
+	}
+	return memtables
+}
+
+func getDefaultGCBefore() int {
+	curTime := time.Now().UnixNano() / int64(time.Second)
+	return int(curTime - int64(config.GcGraceInSeconds))
+}
+
+func (c *ColumnFamilyStore) getColumnFamily(filter QueryFilter) *ColumnFamily {
+	return c.getColumnFamilyGC(filter, getDefaultGCBefore())
+}
+
 func (c *ColumnFamilyStore) apply(key string, columnFamily *ColumnFamily, cLogCtx *CommitLogContext) {
 	// c.memtable.mu.Lock()
 	// defer c.memtable.mu.Unlock()
@@ -696,6 +785,29 @@ func (c *ColumnFamilyStore) switchMemtable(key string, columnFamily *ColumnFamil
 	}
 }
 
+func (c *ColumnFamilyStore) switchMemtableN(oldMemtable *Memtable, ctx *CommitLogContext) {
+	// N stands for new
+	c.memMu.Lock()
+	defer c.memMu.Unlock()
+	if oldMemtable.isFrozen {
+		return
+	}
+	oldMemtable.freeze()
+	memtables := getMemtablePendingFlushNotNull(c.columnFamilyName)
+	memtables = append(memtables, oldMemtable)
+	submitFlush(oldMemtable, ctx)
+	c.memtable = NewMemtable(c.tableName, c.columnFamilyName)
+}
+
+func submitFlush(memtable *Memtable, cLogCtx *CommitLogContext) {
+	// submit memtables to be flushed to disk
+	go func() {
+		memtable.flush(cLogCtx)
+		memtables := getMemtablePendingFlushNotNull(memtable.cfName)
+		memtables = remove(memtables, memtable) // ?
+	}()
+}
+
 func (c *ColumnFamilyStore) getNextFileName() string {
 	// increment twice to generate non-consecutive numbers
 	atomic.AddInt32(&c.fileIdxGenerator, 1)
@@ -703,6 +815,14 @@ func (c *ColumnFamilyStore) getNextFileName() string {
 	name := c.tableName + "-" + c.columnFamilyName + "-" +
 		strconv.Itoa(int(c.fileIdxGenerator))
 	return name
+}
+
+func (c *ColumnFamilyStore) forceFlush() {
+	if c.memtable.isClean() {
+		return
+	}
+	ctx := openCommitLogE().getContext()
+	c.switchMemtableN(c.memtable, ctx)
 }
 
 func (c *ColumnFamilyStore) onMemtableFlush(cLogCtx *CommitLogContext) {
@@ -714,33 +834,32 @@ func (c *ColumnFamilyStore) onMemtableFlush(cLogCtx *CommitLogContext) {
 	}
 }
 
-func (c *ColumnFamilyStore) storeLocation(filename string, bf *utils.BloomFilter) {
+func (c *ColumnFamilyStore) storeLocation(sstable *SSTableReader) {
 	// Called after the memtable flushes its inmemory data.
 	// This information is cached in the ColumnFamilyStore.
 	// This is useful for reads because the ColumnFamilyStore first
 	// looks in the inmemory store and then into the disk to find
 	// the key. If invoked during recoveryMode the onMemtableFlush()
 	// need not be invoked.
-	doCompaction := false
-	ssTableSize := 0
-	c.rwmu.Lock()
-	// c.ssTables[filename] = true // TO REVIEW
-	storeBloomFilter(filename, bf)
-	ssTableSize = len(c.ssTables)
-	c.rwmu.Unlock()
-	if ssTableSize >= c.threshold && !c.isCompacting {
-		doCompaction = true
-	}
-	if c.isCompacting {
-		if ssTableSize%c.threshold == 0 {
-			doCompaction = true
-		}
-	}
-	if doCompaction {
-		log.Printf("Submitting for compaction...")
+
+	c.sstableMu.Lock()
+	c.ssTables[sstable.getFilename()] = sstable
+	ssTableCount := len(c.ssTables)
+	c.sstableMu.Unlock()
+	// it's ok if compaction gets submitted multiple times
+	// while one is already in process. worst that happens
+	// is, compactor will count the sstable files and decide
+	// there are not enough to bother with.
+	if ssTableCount >= config.MinCompactionThres {
+		log.Print("Submitting " + c.columnFamilyName + " for compaction")
 		go c.doCompaction()
 	}
+}
 
+func (c *ColumnFamilyStore) forceCompaction(ranges []*dht.Range, target *network.EndPoint, skip int64, fileList []string) bool {
+	// this method forces a compaction of the sstable on disk
+	// TODO
+	return true
 }
 
 func storeBloomFilter(filename string, bf *utils.BloomFilter) {
