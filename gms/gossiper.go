@@ -163,7 +163,7 @@ func (g *Gossiper) runTask() {
 	gDigests := make([]*GossipDigest, 0)
 	g.makeRandomGossipDigest(gDigests)
 	if len(gDigests) > 0 {
-		message := makeGossipDigestSynMessage(gDigests)
+		message := g.makeGossipDigestSynMessage(gDigests)
 		// gossip to some random live member
 		bVal := g.doGossipToLiveMember(message)
 		// gossip to some unreachable member with some
@@ -306,8 +306,8 @@ func getMaxEndPointStateVersion(epState *EndPointState) int {
 }
 
 // GetEndPointStateForEndPoint returns state for given endpoint.
-func (g *Gossiper) GetEndPointStateForEndPoint(ep network.EndPoint) EndPointState {
-	return *g.endPointStateMap[ep]
+func (g *Gossiper) GetEndPointStateForEndPoint(ep network.EndPoint) *EndPointState {
+	return g.endPointStateMap[ep]
 }
 
 // Register register end point state change subscriber
@@ -355,18 +355,234 @@ func (g *Gossiper) isAlive(addr network.EndPoint, epState *EndPointState, value 
 	epState.SetGossiper(true)
 }
 
+func (g *Gossiper) notifyFailureDetector(gDigests []*GossipDigest) {
+	fd := GetFailureDetector()
+	for _, gDigest := range gDigests {
+		localEndPointState := g.endPointStateMap[gDigest.endPoint]
+		// if the local endpoint state exists then report
+		// to the failure detector only if the versions workout
+		if localEndPointState == nil {
+			continue
+		}
+		localGeneration := g.endPointStateMap[gDigest.endPoint].GetHeartBeatState().generation
+		remoteGeneration := gDigest.generation
+		if remoteGeneration > localGeneration {
+			fd.report(gDigest.endPoint)
+			continue
+		}
+		if remoteGeneration == localGeneration {
+			localVersion := getMaxEndPointStateVersion(localEndPointState)
+			remoteVersion := gDigest.maxVersion
+			if remoteVersion > localVersion {
+				fd.report(gDigest.endPoint)
+			}
+		}
+
+	}
+}
+
+// ByDigest ...
+type ByDigest []*GossipDigest
+
+// Len ...
+func (p ByDigest) Len() int {
+	return len(p)
+}
+
+// Less ...
+func (p ByDigest) Less(i, j int) bool {
+	if p[i].generation != p[j].generation {
+		return p[i].generation < p[j].generation
+	}
+	return p[i].maxVersion < p[j].maxVersion
+}
+
+// Swap ...
+func (p ByDigest) Swap(i, j int) {
+	p[i], p[j] = p[j], p[i]
+}
+
+func (g *Gossiper) doSort(gDigestList []*GossipDigest) {
+	// First construct a map whose key is the endpoint in the
+	// GossipDigest and the value is the GossipDigest itself.
+	// Then build a list of version differences i.e. difference
+	// between the version in the GossipDigest and the version
+	// in the local state for a given EndPoint. Sort this list.
+	// Now loop through the sorted list and retrieve the GossipDigest
+	// corresponding to the endpoint from the map that was initially
+	// constructed.
+	// 1. construct a map of endpoint to GossipDigest
+	epToDigest := make(map[network.EndPoint]*GossipDigest)
+	for _, gDigest := range gDigestList {
+		epToDigest[gDigest.endPoint] = gDigest
+	}
+	// 2. build version differences. These digests have their
+	// own maxVersion set to the difference of the version of
+	// the local EndPointState and the version found in the
+	// GossipDigest.
+	diffDigest := make([]*GossipDigest, 0)
+	for _, gDigest := range gDigestList {
+		ep := gDigest.endPoint
+		epState := g.GetEndPointStateForEndPoint(ep)
+		version := 0
+		if epState != nil {
+			version = getMaxEndPointStateVersion(epState)
+		}
+		diffVersion := version - gDigest.maxVersion
+		if diffVersion < 0 {
+			diffVersion *= -1
+		}
+		diffDigest = append(diffDigest, NewGossipDigest(ep, gDigest.generation, diffVersion))
+	}
+	gDigestList = make([]*GossipDigest, 0)
+	sort.Sort(ByDigest(diffDigest))
+	size := len(diffDigest)
+	// 3. report the digest in descending order. This takes
+	// care of the endpoints that are far behind w.r.t this
+	// local endpoint
+	for i := size - 1; i >= 0; i-- {
+		gDigestList = append(gDigestList, epToDigest[diffDigest[i].endPoint])
+	}
+}
+
+func (g *Gossiper) examineGossiper(gDigestList []*GossipDigest,
+	deltaGossipDigestList []*GossipDigest, deltaEpStateMap map[network.EndPoint]*EndPointState) {
+	// this method is used to figure the state that
+	// the Gossiper has but Gossipee doesn't. the
+	// delta digests and the delta state are built up.
+	for _, gDigest := range gDigestList {
+		remoteGeneration := gDigest.generation
+		maxRemoteVersion := gDigest.maxVersion
+		// get state associated with the end point in digest
+		epStatePtr := g.endPointStateMap[gDigest.endPoint]
+		// here we need to fire a GossipDigestAckMessage.
+		// if we have some data associated with this
+		// endpoint locally then we follow the "if"
+		// path of the logic. If we have absolutely
+		// nothing for this endpoint we need to request
+		// all the data for this endpoint
+		if epStatePtr != nil {
+			localGeneration := epStatePtr.GetHeartBeatState().generation
+			// get the max version of all keys in
+			// the state associated with this endpoint
+			maxLocalVersion := getMaxEndPointStateVersion(epStatePtr)
+			if remoteGeneration == localGeneration && maxRemoteVersion == maxLocalVersion {
+				continue
+			}
+			if remoteGeneration > localGeneration {
+				// we request everything from the gossiper
+				g.requestAll(gDigest, deltaGossipDigestList, remoteGeneration)
+			}
+			if remoteGeneration < localGeneration {
+				// send all data with generation = local generation and version > 0
+				g.sendAll(gDigest, deltaEpStateMap, 0)
+			}
+			if remoteGeneration == localGeneration {
+				// if the max remote version is greater then we request the
+				// remote endpoint send us all the data for this endpoint with
+				// version greater than the max version number we have locally
+				// for this endpoint.
+				// if the max remote version less, then we send all the data
+				// we have locally for this endpoint with verson greater than
+				// the max remote version.
+				if maxRemoteVersion > maxLocalVersion {
+					deltaGossipDigestList = append(deltaGossipDigestList,
+						NewGossipDigest(gDigest.endPoint, remoteGeneration, maxLocalVersion))
+				}
+				if maxRemoteVersion < maxLocalVersion {
+					// send all data with generation = local generation and
+					// version > maxRemoteVersion
+					g.sendAll(gDigest, deltaEpStateMap, maxRemoteVersion)
+				}
+			}
+		} else {
+			// we are here since we have no data for this endpoint locally
+			// so request everything.
+			g.requestAll(gDigest, deltaGossipDigestList, remoteGeneration)
+		}
+	}
+}
+
+func (g *Gossiper) requestAll(gDigest *GossipDigest, deltaGossipDigestList []*GossipDigest, remoteGeneration int) {
+	// request all the state for the endpoint in the gDigest
+	// we are here since we have no data for this endpoint
+	// locally so request everything
+	deltaGossipDigestList = append(deltaGossipDigestList,
+		NewGossipDigest(gDigest.endPoint, remoteGeneration, 0))
+}
+
+func (g *Gossiper) getStateForVersionBiggerThan(forEndpoint network.EndPoint, version int) *EndPointState {
+	epState := g.endPointStateMap[forEndpoint]
+	var res *EndPointState
+	if epState == nil {
+		return res
+	}
+	// here we try to include the Heart Beat state only
+	// if it is greater than the version passed in. it
+	// might happen that the heart beat version maybe
+	// less than version passed in and some application
+	// state has a version that is greater than the version
+	// passed in. in this case we also send the old heart
+	// beat and throw it away on the receiver if it is redundant
+	localHbVersion := epState.GetHeartBeatState().GetVersion()
+	if localHbVersion > int32(version) {
+		res = NewEndPointState(epState.GetHeartBeatState())
+	}
+	appStateMap := epState.applicationState
+	// accumulate all application states whose versions
+	// are greater than "version" variable
+	for key, appState := range appStateMap {
+		if appState.GetStateVersion() > version {
+			if res == nil {
+				res = NewEndPointState(epState.GetHeartBeatState())
+			}
+			res.AddApplicationState(key, appState)
+		}
+	}
+	return res
+}
+
+func (g *Gossiper) sendAll(gDigest *GossipDigest, deltaEpStateMap map[network.EndPoint]*EndPointState, maxRemoteVersion int) {
+	// send all the data with version greater than maxRemoteVersion
+	localEpStatePtr := g.getStateForVersionBiggerThan(gDigest.endPoint, maxRemoteVersion)
+	if localEpStatePtr != nil {
+		deltaEpStateMap[gDigest.endPoint] = localEpStatePtr
+	}
+}
+
 // GossipDigestSynArgs ...
 type GossipDigestSynArgs struct {
+	From      network.EndPoint
 	ClusterID string
-	gDigest   []*GossipDigest
+	GDigest   []*GossipDigest
 }
 
 // GossipDigestSynReply ...
 type GossipDigestSynReply struct{}
 
-func makeGossipDigestSynMessage(gDigest []*GossipDigest) *GossipDigestSynArgs {
-	g := &GossipDigestSynArgs{}
-	g.ClusterID = config.ClusterName
-	g.gDigest = gDigest
-	return g
+func (g *Gossiper) makeGossipDigestSynMessage(gDigest []*GossipDigest) *GossipDigestSynArgs {
+	p := &GossipDigestSynArgs{}
+	p.ClusterID = config.ClusterName
+	p.GDigest = gDigest
+	p.From = *g.localEndPoint
+	return p
+}
+
+// OnGossipDigestSyn is an rpc
+func (g *Gossiper) OnGossipDigestSyn(args *GossipDigestSynArgs, reply *GossipDigestSynReply) error {
+	from := args.From
+	log.Printf("received a GossipDigestSyn from %v\n", from)
+	if args.ClusterID != config.ClusterName {
+		// the message is from a different cluster
+		return nil
+	}
+	gDigestList := args.GDigest
+	g.notifyFailureDetector(gDigestList)
+	g.doSort(gDigestList)
+	deltaGossipDigestList := make([]*GossipDigest, 0)
+	deltaEpStateMap := make(map[network.EndPoint]*EndPointState)
+	g.examineGossiper(gDigestList, deltaGossipDigestList, deltaEpStateMap)
+	// gDigestAck := g.makeGossipDigestAckMessage(deltaGossipDigestList, deltaEpStateMap)
+	// send message
+	return nil
 }

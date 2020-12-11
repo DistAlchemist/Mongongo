@@ -52,3 +52,7 @@ func (e *EndPointState) GetHeartBeatState() *HeartBeatState {
 func (e *EndPointState) GetApplicationState(key string) *ApplicationState {
 	return e.applicationState[key]
 }
+
+func (e *EndPointState) AddApplicationState(key string, appState *ApplicationState) {
+	e.applicationState[key] = appState
+}
