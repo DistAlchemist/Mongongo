@@ -189,7 +189,7 @@ func (c *ColumnFamilyStore) onStart() {
 	go c.doCompaction()
 	// schedule hinted handoff
 	if c.tableName == config.SysTableName && c.columnFamilyName == config.HintsCF {
-		getHintedHandOffManagerInstance().submit(c)
+		GetHintedHandOffManagerInstance().submit(c)
 	}
 	// TODO should also submit periodic flush
 }

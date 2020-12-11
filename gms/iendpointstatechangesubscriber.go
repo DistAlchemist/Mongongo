@@ -10,5 +10,5 @@ import "github.com/DistAlchemist/Mongongo/network"
 // IEndPointStateChangeSubscriber provides an interface
 // for endpoint state change subscribers
 type IEndPointStateChangeSubscriber interface {
-	OnChange(endpoint network.EndPoint, epState EndPointState)
+	OnChange(endpoint network.EndPoint, epState *EndPointState)
 }

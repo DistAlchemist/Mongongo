@@ -35,8 +35,10 @@ type StorageService struct {
 }
 
 var (
-	mu       sync.Mutex
-	instance *StorageService
+	mu              sync.Mutex
+	instance        *StorageService
+	ssNodeID        = "NODE-IDENTIFIER"
+	ssBootstrapMode = "BOOTSTRAP-MODE"
 )
 
 // GetInstance return storageServer instance
@@ -154,8 +156,57 @@ func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowM
 	return nil
 }
 
+func (ss *StorageService) deliverHints(endpoint *network.EndPoint) {
+	db.GetHintedHandOffManagerInstance()
+}
+
 // OnChange implements interface for endpoint
 // state change subscriber
-func (ss *StorageService) OnChange(endpoint network.EndPoint, epState gms.EndPointState) {
-	// TODO
+func (ss *StorageService) OnChange(endpoint network.EndPoint, epState *gms.EndPointState) {
+	// Called when there is a change in application state.
+	// In particular we are interested in new tokens as a
+	// result of a new node or an existing node moving to
+	// a new location on the ring.
+	ep := network.NewEndPointH(endpoint.HostName, config.StoragePort)
+	// node identifier for this endpoint on the identifier space
+	nodeIDState := epState.GetApplicationState(ssNodeID)
+	// check if this has a bootstrapping state message
+	bootstrapState := epState.GetApplicationState(ssBootstrapMode) != nil
+	if bootstrapState {
+		log.Printf("%v is in bootstrap state\n", ep.HostName)
+	}
+	if nodeIDState != nil {
+		newToken := nodeIDState.GetState()
+		log.Printf("change in state for %v - has token %v\n", endpoint, newToken)
+		oldToken := ss.tokenMetadata.GetToken(*ep)
+		if oldToken != "" {
+			// if oldToken equals the newToken then the node
+			// had crashed and is coming back up again. If oldToken
+			// is not equal to the newToken this means that
+			// the node is being relocated to another position
+			// in the ring.
+			if oldToken != newToken {
+				log.Printf("relocation for endpoint: %v\n", ep)
+				ss.tokenMetadata.Update(newToken, ep, bootstrapState)
+			} else {
+				// this means the node crashed and is coming back
+				// up. deliver the hints that we have for this
+				// endpoint
+				log.Printf("sending hinted data to %v\n", ep)
+				ss.deliverHints(&endpoint)
+			}
+		} else {
+			// this is a new node and we just update the token map
+			ss.tokenMetadata.Update(newToken, ep, bootstrapState)
+		}
+	} else {
+		// if we are here and if this node is up and already has
+		// an entry in the token map. it means that the node was
+		// behind a network partition
+		if epState.IsAlive() && ss.tokenMetadata.IsKnownEndPoint(&endpoint) {
+			log.Printf("endpoint %v just recovered from a partition. sending hinted data\n",
+				ep)
+			ss.deliverHints(ep)
+		}
+	}
 }

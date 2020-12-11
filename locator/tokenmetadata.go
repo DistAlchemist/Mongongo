@@ -17,6 +17,7 @@ type TokenMetadata struct {
 	rwm                sync.RWMutex
 	tokenToEndPointMap map[string]network.EndPoint
 	endPointToTokenMap map[network.EndPoint]string
+	bootstrapNodes     map[string]network.EndPoint
 }
 
 // CloneTokenEndPointMap return a copy of current tokenToEndPointMap
@@ -35,4 +36,40 @@ func (t *TokenMetadata) GetToken(endpoint network.EndPoint) string {
 	t.rwm.RLock()
 	defer t.rwm.RUnlock()
 	return t.endPointToTokenMap[endpoint]
+}
+
+// IsKnownEndPoint ...
+func (t *TokenMetadata) IsKnownEndPoint(ep *network.EndPoint) bool {
+	t.rwm.RLock()
+	defer t.rwm.RUnlock()
+	return t.endPointToTokenMap[*ep] != ""
+}
+
+// Update ...
+func (t *TokenMetadata) Update(token string, endpoint *network.EndPoint, bootstrapState bool) {
+	t.rwm.Lock()
+	defer t.rwm.Unlock()
+	if bootstrapState {
+		t.bootstrapNodes[token] = *endpoint
+		t.Remove(endpoint)
+	} else {
+		delete(t.bootstrapNodes, token)
+		oldToken := t.endPointToTokenMap[*endpoint]
+		if oldToken != "" {
+			delete(t.tokenToEndPointMap, oldToken)
+		}
+		t.tokenToEndPointMap[token] = *endpoint
+		t.endPointToTokenMap[*endpoint] = token
+	}
+}
+
+// Remove ...
+func (t *TokenMetadata) Remove(endpoint *network.EndPoint) {
+	t.rwm.Lock()
+	defer t.rwm.Unlock()
+	oldToken := t.endPointToTokenMap[*endpoint]
+	if oldToken != "" {
+		delete(t.tokenToEndPointMap, oldToken)
+	}
+	delete(t.endPointToTokenMap, *endpoint)
 }

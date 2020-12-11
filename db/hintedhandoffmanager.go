@@ -26,13 +26,49 @@ var (
 // HintedHandOffManager ...
 type HintedHandOffManager struct{}
 
-func getHintedHandOffManagerInstance() *HintedHandOffManager {
+// GetHintedHandOffManagerInstance ...
+func GetHintedHandOffManagerInstance() *HintedHandOffManager {
 	if HHOMInstance == nil {
 		hmu.Lock()
 		defer hmu.Unlock()
 		HHOMInstance = &HintedHandOffManager{}
 	}
 	return HHOMInstance
+}
+
+// DeliverHintsToEndpoint ...
+func DeliverHintsToEndpoint(endpoint *network.EndPoint) {
+	log.Printf("started hinted handoff for endpoint %v\n", endpoint.HostName)
+	targetEPBytes := endpoint.HostName
+	// 1. scan through all the keys that we need to handoff
+	// 2. for each key read the list of recipients if the endpoint matches send
+	// 3. delete that recipient from theke if write was successful
+	systemTable := openTable(config.SysTableName)
+	for _, tableName := range config.GetTables() {
+		hintedColumnFamily := systemTable.getCF(tableName, config.HintsCF)
+		if hintedColumnFamily == nil {
+			continue
+		}
+		keys := hintedColumnFamily.getSortedColumns()
+		for _, keyColumn := range keys {
+			keyStr := keyColumn.getName()
+			endpoints := keyColumn.getSubColumns()
+			for _, hintEndPoint := range endpoints {
+				if hintEndPoint.getName() == targetEPBytes && sendMessage(endpoint.HostName, "", keyStr) {
+					deleteEndPoint(hintEndPoint.getName(), tableName, keyColumn.getName(), keyColumn.timestamp())
+					if len(endpoints) == 1 {
+						deleteHintedData(tableName, keyStr)
+					}
+				}
+			}
+		}
+	}
+	log.Printf("finished hinted handoff for endpoint %v\n", endpoint.HostName)
+}
+
+// DeliverHints ...
+func (h *HintedHandOffManager) DeliverHints(to *network.EndPoint) {
+	go DeliverHintsToEndpoint(to)
 }
 
 func (h *HintedHandOffManager) submit(columnFamilyStore *ColumnFamilyStore) {

@@ -6,6 +6,12 @@
 package gms
 
 import (
+	"log"
+	"math/rand"
+	"net"
+	"net/http"
+	"net/rpc"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -14,7 +20,12 @@ import (
 	"github.com/DistAlchemist/Mongongo/network"
 )
 
-var gossiper *Gossiper
+var (
+	// GIntervalInMillis is the time period for
+	// gossiper to gossip
+	GIntervalInMillis = 1000
+	gossiper          *Gossiper
+)
 
 // Gossiper is responsible for Gossiping information for
 // the local endpoint. It maintains the list of live and
@@ -47,6 +58,7 @@ type Gossiper struct {
 	seeds                map[network.EndPoint]bool
 	endPointStateMap     map[network.EndPoint]*EndPointState
 	subscribers          []IEndPointStateChangeSubscriber
+	rnd                  *rand.Rand
 	mu                   sync.Mutex
 }
 
@@ -68,6 +80,8 @@ func NewGossiper() *Gossiper {
 	g.seeds = make(map[network.EndPoint]bool)
 	g.endPointStateMap = make(map[network.EndPoint]*EndPointState)
 	g.subscribers = make([]IEndPointStateChangeSubscriber, 0)
+	s := rand.NewSource(time.Now().UnixNano() / int64(time.Millisecond))
+	g.rnd = rand.New(s)
 	GetFailureDetector().RegisterEventListener(g)
 	return g
 }
@@ -104,7 +118,33 @@ func (g *Gossiper) Start(generation int) {
 		localState.SetGossiper(true)
 		g.endPointStateMap[*g.localEndPoint] = localState
 	}
+	g.startControlServer()
 	go g.RunTimerTask()
+}
+
+func (g *Gossiper) startControlServer() {
+	serv := rpc.NewServer()
+	serv.Register(g)
+	// ===== workaround ==========
+	oldMux := http.DefaultServeMux
+	mux := http.NewServeMux()
+	http.DefaultServeMux = mux
+	// ===========================
+	serv.HandleHTTP(rpc.DefaultRPCPath, rpc.DefaultDebugPath)
+	// ===== workaround ==========
+	http.DefaultServeMux = oldMux
+	// ===========================
+	hostname, err := os.Hostname()
+	if err != nil {
+		log.Fatal(err)
+	}
+	addr := hostname + ":" + config.ControlPort
+	l, e := net.Listen("udp", addr)
+	log.Printf("ControlServer listening to %v\n", addr)
+	if e != nil {
+		log.Fatal("listen error: ", e)
+	}
+	go http.Serve(l, mux)
 }
 
 // RunTimerTask starts the periodic task for a gossiper
@@ -123,8 +163,114 @@ func (g *Gossiper) runTask() {
 	gDigests := make([]*GossipDigest, 0)
 	g.makeRandomGossipDigest(gDigests)
 	if len(gDigests) > 0 {
-		// TODO will send gossip messages to other nodes
+		message := makeGossipDigestSynMessage(gDigests)
+		// gossip to some random live member
+		bVal := g.doGossipToLiveMember(message)
+		// gossip to some unreachable member with some
+		// probability to check if he is back up
+		g.doGossipToUnreachableMember(message)
+		// gossip to the seed
+		if bVal == false {
+			g.doGossipToSeed(message)
+		}
+		log.Printf("Performing status check ...")
+		g.doStatusCheck()
 	}
+}
+
+func getCurrentTimeInMillis() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
+
+func (g *Gossiper) doStatusCheck() {
+	for endpoint := range g.endPointStateMap {
+		if endpoint == *g.localEndPoint {
+			continue
+		}
+		GetFailureDetector().interpret(endpoint)
+		epState := g.endPointStateMap[endpoint]
+		if epState == nil {
+			continue
+		}
+		duration := getCurrentTimeInMillis() - epState.updateTimestamp
+		if epState.isAlive == false && duration > g.aVeryLongTime {
+			g.evictFromMembership(endpoint)
+		}
+	}
+}
+
+func (g *Gossiper) evictFromMembership(endpoint network.EndPoint) {
+	// removes the endpoint from unreachable endpoint set
+	delete(g.unreachableEndpoints, endpoint)
+}
+
+func (g *Gossiper) doGossipToSeed(message *GossipDigestSynArgs) {
+	// gossip to a seed for facilitating partition healing
+	size := len(g.seeds)
+	if size == 0 {
+		return
+	}
+	_, ok := g.seeds[*g.localEndPoint]
+	if size == 1 && ok {
+		return
+	}
+	if len(g.liveEndpoints) == 0 {
+		g.sendGossip(message, g.seeds)
+	} else {
+		// gossip with the seed with some probability
+		prob := float64(len(g.seeds)) / float64(len(g.liveEndpoints)+len(g.unreachableEndpoints))
+		randDbl := g.rnd.Float64()
+		if randDbl <= prob {
+			g.sendGossip(message, g.seeds)
+		}
+	}
+}
+
+func (g *Gossiper) doGossipToUnreachableMember(message *GossipDigestSynArgs) {
+	// sends a gossip message to an unreachable member
+	liveEndPoints := len(g.liveEndpoints)
+	unreachableEndPoints := len(g.unreachableEndpoints)
+	if unreachableEndPoints == 0 {
+		return
+	}
+	prob := float64(unreachableEndPoints) / (float64(liveEndPoints + 1))
+	randDbl := g.rnd.Float64()
+	if randDbl < prob {
+		g.sendGossip(message, g.unreachableEndpoints)
+	}
+}
+
+func (g *Gossiper) doGossipToLiveMember(message *GossipDigestSynArgs) bool {
+	size := len(g.liveEndpoints)
+	if size == 0 {
+		return false
+	}
+	return g.sendGossip(message, g.liveEndpoints)
+}
+
+func (g *Gossiper) sendGossip(message *GossipDigestSynArgs, epSet map[network.EndPoint]bool) bool {
+	size := len(g.liveEndpoints)
+	// generate a random number in [0,size)
+	liveEndPoints := make([]network.EndPoint, size)
+	for ep := range epSet {
+		liveEndPoints = append(liveEndPoints, ep)
+	}
+	var index int
+	if size == 1 {
+		index = 0
+	} else {
+		index = g.rnd.Intn(size)
+	}
+	to := liveEndPoints[index]
+	log.Printf("Sending a GossipDigestSynMessage to %v ...\n", to)
+	reply := &GossipDigestSynReply{}
+	client, err := rpc.DialHTTP("tcp", to.HostName+":"+config.ControlPort)
+	if err != nil {
+		log.Fatal("dialing: ", err)
+	}
+	client.Go("Gossiper.OnGossipDigestSyn", message, reply, nil)
+	_, ok := g.seeds[to]
+	return ok
 }
 
 func (g *Gossiper) makeRandomGossipDigest(gDigests []*GossipDigest) {
@@ -178,5 +324,49 @@ func (g *Gossiper) Convict(endpoint network.EndPoint) {
 // Suspect implements IFailureDetectionEventListener interface
 // it is invoked by the Failure Detector when it suspects an end point
 func (g *Gossiper) Suspect(endpoint network.EndPoint) {
-	// TODO
+	epState := g.endPointStateMap[endpoint]
+	if epState.isAlive {
+		log.Printf("EndPoint %v is not dead\n", endpoint)
+		g.isAlive(endpoint, epState, false)
+		// notify an endpoint is dead to interested parties
+		deltaState := NewEndPointState(epState.GetHeartBeatState())
+		g.doNotifications(endpoint, deltaState)
+	}
+}
+
+func (g *Gossiper) doNotifications(addr network.EndPoint, epState *EndPointState) {
+	for _, subscriber := range g.subscribers {
+		subscriber.OnChange(addr, epState)
+	}
+}
+
+func (g *Gossiper) isAlive(addr network.EndPoint, epState *EndPointState, value bool) {
+	epState.SetAlive(value)
+	if value {
+		g.liveEndpoints[addr] = true
+		delete(g.unreachableEndpoints, addr)
+	} else {
+		delete(g.liveEndpoints, addr)
+		g.unreachableEndpoints[addr] = true
+	}
+	if epState.isAGossiper {
+		return
+	}
+	epState.SetGossiper(true)
+}
+
+// GossipDigestSynArgs ...
+type GossipDigestSynArgs struct {
+	ClusterID string
+	gDigest   []*GossipDigest
+}
+
+// GossipDigestSynReply ...
+type GossipDigestSynReply struct{}
+
+func makeGossipDigestSynMessage(gDigest []*GossipDigest) *GossipDigestSynArgs {
+	g := &GossipDigestSynArgs{}
+	g.ClusterID = config.ClusterName
+	g.gDigest = gDigest
+	return g
 }

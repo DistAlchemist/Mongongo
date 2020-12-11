@@ -11,7 +11,7 @@ import "time"
 // ApplicationState.
 type EndPointState struct {
 	hbState          *HeartBeatState
-	applicationState map[string]ApplicationState
+	applicationState map[string]*ApplicationState
 	updateTimestamp  int64
 	isAlive          bool
 	isAGossiper      bool
@@ -26,7 +26,7 @@ func (e *EndPointState) IsAlive() bool {
 func NewEndPointState(hbState *HeartBeatState) *EndPointState {
 	e := &EndPointState{}
 	e.hbState = hbState
-	e.applicationState = make(map[string]ApplicationState)
+	e.applicationState = make(map[string]*ApplicationState)
 	e.updateTimestamp = time.Now().UnixNano() / int64(time.Millisecond)
 	e.isAlive = true
 	e.isAGossiper = false
@@ -46,4 +46,9 @@ func (e *EndPointState) SetGossiper(g bool) {
 // GetHeartBeatState return hbState
 func (e *EndPointState) GetHeartBeatState() *HeartBeatState {
 	return e.hbState
+}
+
+// GetApplicationState ...
+func (e *EndPointState) GetApplicationState(key string) *ApplicationState {
+	return e.applicationState[key]
 }
