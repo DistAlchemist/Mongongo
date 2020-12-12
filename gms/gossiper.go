@@ -355,6 +355,14 @@ func (g *Gossiper) isAlive(addr network.EndPoint, epState *EndPointState, value 
 	epState.SetGossiper(true)
 }
 
+// AddApplicationState ...
+func (g *Gossiper) AddApplicationState(key string, appState *ApplicationState) {
+	epState := g.endPointStateMap[*g.localEndPoint]
+	if epState != nil {
+		epState.AddApplicationState(key, appState)
+	}
+}
+
 func (g *Gossiper) notifyFailureDetector(gDigests []*GossipDigest) {
 	fd := GetFailureDetector()
 	for _, gDigest := range gDigests {

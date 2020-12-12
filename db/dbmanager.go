@@ -146,13 +146,13 @@ func sysInitMetadata() *StorageMetadata {
 
 // StorageMetadata stores id and generation
 type StorageMetadata struct {
-	storageID  string
-	generation int
+	StorageID  string
+	Generation int
 }
 
 // GetGeneration return generation for this storage metadata
 func (s *StorageMetadata) GetGeneration() int {
-	return s.generation
+	return s.Generation
 }
 
 // RowMutationArgs for rm arguments

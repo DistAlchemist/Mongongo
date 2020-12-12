@@ -32,6 +32,8 @@ type StorageService struct {
 	partitioner         IPartitioner
 	storageMetadata     *db.StorageMetadata
 	isBootstrapMode     bool
+	tcpAddr             *network.EndPoint
+	udpAddr             *network.EndPoint
 }
 
 var (
@@ -39,6 +41,7 @@ var (
 	instance        *StorageService
 	ssNodeID        = "NODE-IDENTIFIER"
 	ssBootstrapMode = "BOOTSTRAP-MODE"
+	ssInitialDelay  = 60000
 )
 
 // GetInstance return storageServer instance
@@ -134,6 +137,8 @@ func (ss *StorageService) startControlServer() {
 func (ss *StorageService) Start() {
 	ss.initPartitioner()
 	ss.storageMetadata = db.GetManagerInstance().Start()
+	ss.tcpAddr = network.NewEndPoint(config.StoragePort)
+	ss.udpAddr = network.NewEndPoint(config.ControlPort)
 	// _ = db.GetManagerInstance().Start()
 	ss.startStorageServer()
 	// ss.startControlServer()
@@ -141,10 +146,34 @@ func (ss *StorageService) Start() {
 	gms.GetGossiper().Register(ss)
 	gms.GetGossiper().Start(ss.storageMetadata.GetGeneration())
 	// make sure this token gets gossiped around
-	// TODO
-	// ss.tokenMetadata.Update(ss.storageMetadata.storageID)
-	// gms.GetGossiper().AddApplicationState(..)
+	ss.tokenMetadata.Update(ss.storageMetadata.StorageID, network.NewEndPoint(config.StoragePort), ss.isBootstrapMode)
+	state := gms.NewApplicationStateS(ss.storageMetadata.StorageID)
+	gms.GetGossiper().AddApplicationState(ssNodeID, state)
+	if ss.isBootstrapMode {
+		log.Printf("starting in bootstrap mode\n")
+		go ss.runBootStrap([]*network.EndPoint{ss.tcpAddr}, ss.storageMetadata.StorageID)
+		gms.GetGossiper().AddApplicationState(ssBootstrapMode, gms.NewApplicationStateS(""))
+	}
 }
+
+func (ss *StorageService) runBootStrap(targets []*network.EndPoint, tokens ...string) {
+	// initial delay waiting for this node to get a stable endpoint map
+	// defaults to 60s
+	// time.Sleep(time.Duration(ssInitialDelay) * time.Millisecond)
+	// // clone again now so we include all discovered nodes in out calculations
+	// tokenMetadata := ss.tokenMetadata
+	// mark as not bootstrapping to calculate ranges correctly
+	// for i := 0; i < len(targets); i++ {
+	// 	ss.tokenMetadata.Update(tokens[i], targets[i], false)
+	// }
+	// rangesWithSourceTarget := ss.getRangeWithSourceTarget()
+	// log.Printf("beginning bootstrap process for %v ...\n", targets)
+	// send messages to respective folks to stream data over to the
+	// new nodes being bootstrapped
+	// TODO
+}
+
+// func (ss *StorageService) getRangeWithSourceTarget() map[dht.Range]
 
 // DoRowMutation as a rpc served by storage service
 func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowMutationReply) error {
