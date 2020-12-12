@@ -33,3 +33,8 @@ func (r *OrderPreservingPartitioner) Compare(s1, s2 string) int {
 	}
 	return 1
 }
+
+// GetToken ...
+func (r *OrderPreservingPartitioner) GetToken(key string) string {
+	return key
+}

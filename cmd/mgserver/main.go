@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"net/rpc"
 
-	"github.com/DistAlchemist/Mongongo/server"
+	"github.com/DistAlchemist/Mongongo/service"
 )
 
 func main() {
-	mg := new(server.Mongongo)
+	mg := new(service.Mongongo)
 	mg.Hostname = "localhost"
-	mg.Port = 1111
+	mg.Port = 9160
 	mg.Start()
 	serv := rpc.NewServer()
 	serv.Register(mg)
@@ -30,7 +30,7 @@ func main() {
 	// ===== workaround ==========
 	http.DefaultServeMux = oldMux
 	// ===========================
-	l, e := net.Listen("tcp", "localhost:1111")
+	l, e := net.Listen("tcp", "localhost:9160")
 	if e != nil {
 		log.Fatal("listen error: ", e)
 	}

@@ -9,7 +9,13 @@ import (
 	"encoding/binary"
 	"log"
 	"strings"
+
+	"github.com/DistAlchemist/Mongongo/config"
+	"github.com/DistAlchemist/Mongongo/utils"
 )
+
+// HINT string
+var HINT = "HINT"
 
 // RowMutation definition
 type RowMutation struct {
@@ -23,6 +29,7 @@ func NewRowMutation(tableName, rowKey string) RowMutation {
 	rm := RowMutation{}
 	rm.TableName = tableName
 	rm.RowKey = rowKey
+	rm.Modification = make(map[string]*ColumnFamily)
 	return rm
 }
 
@@ -31,10 +38,27 @@ func NewRowMutationR(tableName string, row *Row) *RowMutation {
 	rm := &RowMutation{}
 	rm.TableName = tableName
 	rm.RowKey = row.key
+	rm.Modification = make(map[string]*ColumnFamily)
 	for _, cf := range row.columnFamilies {
 		rm.AddCF(cf)
 	}
 	return rm
+}
+
+// AddHints ...
+func (rm *RowMutation) AddHints(key, host string) {
+	path := NewQueryPath(config.HintsCF, []byte(key), []byte(host))
+	rm.AddQ(path, nil, utils.CurrentTimeMillis())
+}
+
+// AddQ ...
+func (rm *RowMutation) AddQ(path *QueryPath, value []byte, timestamp int64) {
+	columnFamily := rm.Modification[path.columnFamilyName]
+	if columnFamily == nil {
+		columnFamily = createColumnFamily(rm.TableName, path.columnFamilyName)
+	}
+	columnFamily.addColumnQP(path, string(value), timestamp, false)
+	rm.Modification[path.columnFamilyName] = columnFamily
 }
 
 // AddCF adds column family to modification

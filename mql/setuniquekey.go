@@ -17,8 +17,8 @@ import (
 type setUniqueKey struct {
 	cfMetaData     config.CFMetaData
 	rowKey         string
-	columnKey      string
 	superColumnKey string
+	columnKey      string
 	value          string
 }
 

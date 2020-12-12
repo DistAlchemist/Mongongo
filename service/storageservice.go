@@ -17,6 +17,7 @@ import (
 
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/db"
+	"github.com/DistAlchemist/Mongongo/dht"
 	"github.com/DistAlchemist/Mongongo/gms"
 	"github.com/DistAlchemist/Mongongo/locator"
 	"github.com/DistAlchemist/Mongongo/network"
@@ -29,7 +30,7 @@ type StorageService struct {
 	endpointSnitch      locator.EndPointSnitch
 	tokenMetadata       locator.TokenMetadata
 	nodePicker          *locator.RackStrategy
-	partitioner         IPartitioner
+	partitioner         dht.IPartitioner
 	storageMetadata     *db.StorageMetadata
 	isBootstrapMode     bool
 	tcpAddr             *network.EndPoint
@@ -70,16 +71,16 @@ func (ss *StorageService) init() {
 }
 
 func (ss *StorageService) getNStorageEndPointMap(key string) map[network.EndPoint]network.EndPoint {
-	token := ss.partitioner.hash(key)
+	token := ss.partitioner.GetToken(key)
 	return ss.nodePicker.GetHintedStorageEndPoints(token)
 }
 
 func (ss *StorageService) initPartitioner() {
 	hashingStrategy := config.HashingStrategy
 	if hashingStrategy == config.Ophf {
-		ss.partitioner = NewOrderPreservingHashPartitioner()
+		ss.partitioner = dht.NewOPP()
 	} else {
-		ss.partitioner = NewRandomPartitioner()
+		ss.partitioner = dht.NewRandomPartitioner()
 	}
 }
 
@@ -178,10 +179,10 @@ func (ss *StorageService) runBootStrap(targets []*network.EndPoint, tokens ...st
 // DoRowMutation as a rpc served by storage service
 func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowMutationReply) error {
 	fmt.Println("enter DoRowMutation")
-	// TODO check hints
+	db.DoRowMutation(args, reply)
 	// apply row mutation
-	args.RM.Apply(db.NewRow(args.RM.RowKey))
-	reply.Result = "DoRowMutation success"
+	// args.RM.Apply(db.NewRow(args.RM.RowKey))
+	// reply.Result = "DoRowMutation success"
 	return nil
 }
 
@@ -238,4 +239,8 @@ func (ss *StorageService) OnChange(endpoint network.EndPoint, epState *gms.EndPo
 			ss.deliverHints(ep)
 		}
 	}
+}
+
+func (ss *StorageService) getHintedStorageEndpointMap(key string) map[network.EndPoint]network.EndPoint {
+	return ss.nodePicker.GetHintedStorageEndPoints(ss.partitioner.GetToken(key))
 }

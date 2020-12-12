@@ -86,3 +86,8 @@ func (r *RandomPartitioner) Hash(key string) string {
 	tmp := md5.Sum([]byte(key))
 	return string(tmp[:])
 }
+
+// GetToken ...
+func (r *RandomPartitioner) GetToken(key string) string {
+	return r.Hash(key)
+}

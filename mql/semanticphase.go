@@ -147,6 +147,29 @@ func getColumnFamilyInfo(ast *node) config.CFMetaData {
 }
 
 func compileGet(ast *node) Plan {
-	plan := setUniqueKey{}
+	columnSpec := ast.children[0]
+	cfMetaData := getColumnFamilyInfo(columnSpec)
+	rowKey := columnSpec.children[2].children[0].text
+	// skip over tableName, columnFamily and rowKey
+	dimensions := len(columnSpec.children) - 3
+	var plan Plan
+	if cfMetaData.ColumnType == "Super" {
+		if dimensions == 2 {
+			// get table.superCF['rowKey']['superColumnKey']['columnKey']
+			superColumnKey := getColumn(columnSpec, 0)
+			columnKey := getColumn(columnSpec, 1)
+			plan = getUniqueKey{cfMetaData, rowKey, superColumnKey, columnKey}
+		} else {
+			log.Printf("Unsupported dimenstion\n")
+		}
+	} else {
+		if dimensions == 1 {
+			// get table.standardCF['key']['column']
+			columnKey := getColumn(columnSpec, 0)
+			plan = getUniqueKey{cfMetaData, rowKey, "", columnKey}
+		} else {
+			log.Printf("Unsupported dimension\n")
+		}
+	}
 	return plan
 }

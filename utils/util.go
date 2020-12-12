@@ -11,7 +11,13 @@ import (
 	"bytes"
 	"encoding/gob"
 	"hash/fnv"
+	"time"
 )
+
+// CurrentTimeMillis ...
+func CurrentTimeMillis() int64 {
+	return time.Now().UnixNano() / int64(time.Millisecond)
+}
 
 // GetBytes Convert any type data into bytes
 func GetBytes(key interface{}) ([]byte, error) {

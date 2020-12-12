@@ -17,12 +17,12 @@ import (
 
 	"github.com/peterh/liner"
 
-	"github.com/DistAlchemist/Mongongo/server"
+	"github.com/DistAlchemist/Mongongo/mql"
 )
 
 var (
 	hostName  = flag.String("hostname", "localhost", "mongongo server hostname")
-	rpcPort   = flag.String("port", "1111", "rpc port to connect to mongongo server")
+	rpcPort   = flag.String("port", "9160", "rpc port to connect to mongongo server")
 	prompt    = "mongongo"
 	reader    *bufio.Reader
 	cc        *rpc.Client
@@ -38,18 +38,19 @@ func printBanner() {
 }
 
 func processServerQuery(line string) {
-	//
-	args := server.ExecuteArgs{}
-	reply := server.ExecuteReply{}
-	args.Line = line
-	err := cc.Call("Mongongo.ExecuteQueryOnServer", &args, &reply)
-	if err != nil {
-		log.Fatal("calling:", err)
-	}
-	log.Printf("reply.result: %+v\n", reply.Result)
-	for k, v := range reply.Result.ResultSet {
-		log.Printf("%v: %v\n", k, v)
-	}
+	mql.ExecuteQuery(cc, line)
+	// //
+	// args := server.ExecuteArgs{}
+	// reply := server.ExecuteReply{}
+	// args.Line = line
+	// err := cc.Call("Mongongo.ExecuteQueryOnServer", &args, &reply)
+	// if err != nil {
+	// 	log.Fatal("calling:", err)
+	// }
+	// log.Printf("reply.result: %+v\n", reply.Result)
+	// for k, v := range reply.Result.ResultSet {
+	// 	log.Printf("%v: %v\n", k, v)
+	// }
 }
 
 func printHelp() {

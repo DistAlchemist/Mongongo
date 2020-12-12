@@ -13,6 +13,7 @@ import (
 
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/dht"
+	"github.com/DistAlchemist/Mongongo/network"
 )
 
 var (
@@ -157,13 +158,32 @@ func (s *StorageMetadata) GetGeneration() int {
 
 // RowMutationArgs for rm arguments
 type RowMutationArgs struct {
-	RM RowMutation
+	HeaderKey   string
+	HeaderValue network.EndPoint
+	From        network.EndPoint
+	RM          RowMutation
 }
 
 // RowMutationReply for rm reply structure
 type RowMutationReply struct {
 	Result string
 	Status bool
+}
+
+// DoRowMutation ...
+func DoRowMutation(args *RowMutationArgs, reply *RowMutationReply) error {
+	rm := args.RM
+	if args.HeaderKey == HINT {
+		hint := args.HeaderValue
+		log.Printf("adding hint for %v\n", hint)
+		// add necessary hints to this mutation
+		hintedMutation := NewRowMutation(config.SysTableName, rm.TableName)
+		hintedMutation.AddHints(rm.RowKey, hint.HostName)
+		hintedMutation.ApplyE()
+	}
+	rm.ApplyE()
+	reply.Status = true
+	return nil
 }
 
 // // Insert dispatches rowmutation to other replicas

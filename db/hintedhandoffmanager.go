@@ -181,7 +181,8 @@ func sendEndPointRM(end *network.EndPoint, rm *RowMutation) bool {
 	if err != nil {
 		log.Fatal("dialing:", err)
 	}
-	args := RowMutationArgs{*rm}
+	args := RowMutationArgs{}
+	args.RM = *rm
 	reply := RowMutationReply{}
 	err = c.Call("StorageService.DoRowMutation", &args, &reply)
 	if err != nil {

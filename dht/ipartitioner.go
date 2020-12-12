@@ -10,4 +10,5 @@ type IPartitioner interface {
 	DecorateKey(key string) string
 	UndecorateKey(decoreateddKey string) string
 	Compare(s1, s2 string) int
+	GetToken(key string) string
 }
