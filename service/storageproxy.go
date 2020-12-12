@@ -114,3 +114,47 @@ func createWriteMessage(rm db.RowMutation, endpointMap map[network.EndPoint]netw
 	}
 	return messageMap
 }
+
+func readProtocol(commands []db.ReadCommand, consistencyLevel int) []*db.Row {
+	// performs the actual reading of a row out of the StorageService,
+	// fetching a specific set of column names from a given column family
+	rows := make([]*db.Row, 0)
+	if consistencyLevel == 1 {
+		localCommands := make([]db.ReadCommand, 0)
+		remoteCommands := make([]db.ReadCommand, 0)
+		for _, command := range commands {
+			endpoints := GetInstance().getReadStorageEndPoints(command.GetKey())
+			_, foundlocal := endpoints[*GetInstance().tcpAddr]
+			if foundlocal && GetInstance().isBootstrapMode == false {
+				localCommands = append(localCommands, command)
+			} else {
+				remoteCommands = append(remoteCommands, command)
+			}
+		}
+		if len(localCommands) > 0 {
+			rows = append(rows, weakReadLocal(localCommands)...)
+		} else {
+			rows = append(rows, weakReadRemote(remoteCommands)...)
+		}
+	} else {
+		if consistencyLevel != 2 { // Quorum
+			rows = strongRead(commands)
+		}
+	}
+	return rows
+}
+
+func weakReadLocal(commands []db.ReadCommand) []*db.Row {
+	// TODO
+	return make([]*db.Row, 0)
+}
+
+func weakReadRemote(commands []db.ReadCommand) []*db.Row {
+	// TODO
+	return make([]*db.Row, 0)
+}
+
+func strongRead(commands []db.ReadCommand) []*db.Row {
+	// TODO
+	return make([]*db.Row, 0)
+}

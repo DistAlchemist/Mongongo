@@ -74,3 +74,8 @@ func (rus *RackUnawareStrategy) getStorageEndPoints(token string, tokenEndPointM
 	retrofitPorts(list)
 	return list
 }
+
+// GetReadStorageEndPoints ...
+func (rus *RackUnawareStrategy) GetReadStorageEndPoints(token string) map[network.EndPoint]bool {
+	return map[network.EndPoint]bool{}
+}

@@ -186,6 +186,10 @@ func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowM
 	return nil
 }
 
+func (ss *StorageService) getReadStorageEndPoints(key string) map[network.EndPoint]bool {
+	return ss.nodePicker.GetReadStorageEndPoints(ss.partitioner.GetToken(key))
+}
+
 func (ss *StorageService) deliverHints(endpoint *network.EndPoint) {
 	db.GetHintedHandOffManagerInstance()
 }

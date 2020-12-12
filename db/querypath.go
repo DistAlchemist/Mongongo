@@ -7,17 +7,17 @@ package db
 
 // QueryPath ...
 type QueryPath struct {
-	columnFamilyName string
-	superColumnName  []byte
-	columnName       []byte
+	ColumnFamilyName string
+	SuperColumnName  []byte
+	ColumnName       []byte
 }
 
 // NewQueryPath ...
 func NewQueryPath(columnFamilyName string, superColumnName, columnName []byte) *QueryPath {
 	q := &QueryPath{}
-	q.columnFamilyName = columnFamilyName
-	q.superColumnName = superColumnName
-	q.columnName = columnName
+	q.ColumnFamilyName = columnFamilyName
+	q.SuperColumnName = superColumnName
+	q.ColumnName = columnName
 	return q
 }
 

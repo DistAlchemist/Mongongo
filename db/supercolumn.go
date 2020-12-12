@@ -41,7 +41,18 @@ func (sc SuperColumn) isMarkedForDelete() bool {
 	return sc.deleteMark
 }
 
+// IsMarkedForDelete ...
+func (sc SuperColumn) IsMarkedForDelete() bool {
+	return sc.deleteMark
+}
+
 func (sc SuperColumn) getValue() []byte {
+	log.Fatal("super column doesn't support getValue")
+	return []byte{}
+}
+
+// GetValue ...
+func (sc SuperColumn) GetValue() []byte {
 	log.Fatal("super column doesn't support getValue")
 	return []byte{}
 }
@@ -68,6 +79,18 @@ func NewSuperColumn(name string) SuperColumn {
 	sc := SuperColumn{}
 	sc.Name = name
 	sc.Columns = make(map[string]IColumn)
+	sc.deleteMark = false
+	sc.size = 0
+	sc.localDeletionTime = math.MinInt32
+	sc.markedForDeleteAt = math.MinInt64
+	return sc
+}
+
+// NewSuperColumnN constructs a SuperColun
+func NewSuperColumnN(name string, subcolumns map[string]IColumn) SuperColumn {
+	sc := SuperColumn{}
+	sc.Name = name
+	sc.Columns = subcolumns
 	sc.deleteMark = false
 	sc.size = 0
 	sc.localDeletionTime = math.MinInt32
@@ -133,7 +156,17 @@ func (sc SuperColumn) timestamp() int64 {
 	return sc.Timestamp
 }
 
+// GetTimestamp ...
+func (sc SuperColumn) GetTimestamp() int64 {
+	return sc.Timestamp
+}
+
 func (sc SuperColumn) getName() string {
+	return sc.Name
+}
+
+// GetName ...
+func (sc SuperColumn) GetName() string {
 	return sc.Name
 }
 
@@ -147,7 +180,7 @@ func (sc SuperColumn) putColumn(column IColumn) bool {
 	if sc.Name != column.getName() {
 		log.Fatal("The name should match the name of the current super column")
 	}
-	columns := column.getSubColumns()
+	columns := column.GetSubColumns()
 	for _, subColumn := range columns {
 		sc.addColumn(subColumn)
 	}
@@ -164,6 +197,11 @@ func (sc SuperColumn) cloneMeShallow() SuperColumn {
 }
 
 func (sc SuperColumn) getSubColumns() map[string]IColumn {
+	return sc.Columns
+}
+
+// GetSubColumns ...
+func (sc SuperColumn) GetSubColumns() map[string]IColumn {
 	return sc.Columns
 }
 
@@ -193,7 +231,7 @@ func (s *SuperColumnSerializer) serialize(column IColumn, dos *os.File) {
 	writeString(dos, column.getName())
 	writeInt(dos, superColumn.getLocalDeletionTime())
 	writeInt64(dos, superColumn.getMarkedForDeleteAt())
-	columns := column.getSubColumns()
+	columns := column.GetSubColumns()
 	for _, subColumn := range columns {
 		CSerializer.serialize(subColumn, dos)
 	}
@@ -204,7 +242,7 @@ func (s *SuperColumnSerializer) serializeB(column IColumn, dos []byte) {
 	writeStringB(dos, column.getName())
 	writeIntB(dos, superColumn.getLocalDeletionTime())
 	writeInt64B(dos, superColumn.getMarkedForDeleteAt())
-	columns := column.getSubColumns()
+	columns := column.GetSubColumns()
 	for _, subColumn := range columns {
 		CSerializer.serializeB(subColumn, dos)
 	}

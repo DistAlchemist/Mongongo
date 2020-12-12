@@ -40,7 +40,7 @@ func (c *ColumnFamilySerializer) serializeWithIndexes(columnFamily *ColumnFamily
 func (c *ColumnFamilySerializer) serializeForSSTable(columnFamily *ColumnFamily, dos []byte) {
 	writeIntB(dos, columnFamily.localDeletionTime)
 	writeInt64B(dos, columnFamily.markedForDeleteAt)
-	columns := columnFamily.getSortedColumns()
+	columns := columnFamily.GetSortedColumns()
 	writeIntB(dos, len(columns))
 	for _, column := range columns {
 		columnFamily.getColumnSerializer().serializeB(column, dos)

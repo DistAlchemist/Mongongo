@@ -37,9 +37,9 @@ func NewRowMutation(tableName, rowKey string) RowMutation {
 func NewRowMutationR(tableName string, row *Row) *RowMutation {
 	rm := &RowMutation{}
 	rm.TableName = tableName
-	rm.RowKey = row.key
+	rm.RowKey = row.Key
 	rm.Modification = make(map[string]*ColumnFamily)
-	for _, cf := range row.columnFamilies {
+	for _, cf := range row.ColumnFamilies {
 		rm.AddCF(cf)
 	}
 	return rm
@@ -53,12 +53,12 @@ func (rm *RowMutation) AddHints(key, host string) {
 
 // AddQ ...
 func (rm *RowMutation) AddQ(path *QueryPath, value []byte, timestamp int64) {
-	columnFamily := rm.Modification[path.columnFamilyName]
+	columnFamily := rm.Modification[path.ColumnFamilyName]
 	if columnFamily == nil {
-		columnFamily = createColumnFamily(rm.TableName, path.columnFamilyName)
+		columnFamily = createColumnFamily(rm.TableName, path.ColumnFamilyName)
 	}
 	columnFamily.addColumnQP(path, string(value), timestamp, false)
-	rm.Modification[path.columnFamilyName] = columnFamily
+	rm.Modification[path.ColumnFamilyName] = columnFamily
 }
 
 // AddCF adds column family to modification
@@ -114,17 +114,17 @@ func (rm *RowMutation) ApplyE() {
 
 // Delete ...
 func (rm *RowMutation) Delete(path *QueryPath, timestamp int64) {
-	cfName := path.columnFamilyName
+	cfName := path.ColumnFamilyName
 	_, ok := rm.Modification[cfName]
 	if ok {
 		log.Fatal("ColumnFamily " + cfName + " is already being modified")
 	}
 	localDeleteTime := int(getCurrentTimeInMillis() / 1000)
 	columnFamily := createColumnFamily(rm.TableName, cfName)
-	if path.superColumnName == nil && path.columnName == nil {
+	if path.SuperColumnName == nil && path.ColumnName == nil {
 		columnFamily.delete(localDeleteTime, timestamp)
-	} else if path.columnName == nil {
-		sc := NewSuperColumn(string(path.superColumnName))
+	} else if path.ColumnName == nil {
+		sc := NewSuperColumn(string(path.SuperColumnName))
 		sc.markForDeleteAt(localDeleteTime, timestamp)
 		columnFamily.addColumn(sc)
 	} else {

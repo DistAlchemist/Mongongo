@@ -41,7 +41,17 @@ func (c Column) isMarkedForDelete() bool {
 	return c.deleteMark
 }
 
+// IsMarkedForDelete ...
+func (c Column) IsMarkedForDelete() bool {
+	return c.deleteMark
+}
+
 func (c Column) getValue() []byte {
+	return []byte(c.Value)
+}
+
+// GetValue ..
+func (c Column) GetValue() []byte {
 	return []byte(c.Value)
 }
 
@@ -166,6 +176,11 @@ func (c Column) timestamp() int64 {
 	return c.Timestamp
 }
 
+// GetTimestamp ...
+func (c Column) GetTimestamp() int64 {
+	return c.Timestamp
+}
+
 func (c Column) comparePriority(o Column) int64 {
 	if c.isMarkedForDelete() {
 		// tombstone always wins ties
@@ -198,7 +213,18 @@ func (c Column) getName() string {
 	return c.Name
 }
 
+// GetName ...
+func (c Column) GetName() string {
+	return c.Name
+}
+
 func (c Column) getSubColumns() map[string]IColumn {
+	log.Fatal("This operation is not supported on simple columns")
+	return nil
+}
+
+// GetSubColumns ...
+func (c Column) GetSubColumns() map[string]IColumn {
 	log.Fatal("This operation is not supported on simple columns")
 	return nil
 }

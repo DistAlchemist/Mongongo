@@ -143,17 +143,17 @@ func (m *Memtable) getSliceIterator(filter *SliceQueryFilter) ColumnIterator {
 	var columnFamily *ColumnFamily
 	var columns []IColumn
 	if ok == false {
-		columnFamily = createColumnFamily(m.tableName, filter.path.columnFamilyName)
-		columns = columnFamily.getSortedColumns()
+		columnFamily = createColumnFamily(m.tableName, filter.path.ColumnFamilyName)
+		columns = columnFamily.GetSortedColumns()
 	} else {
 		columnFamily = cf.cloneMeShallow()
-		columns = cf.getSortedColumns()
+		columns = cf.GetSortedColumns()
 	}
 	if filter.reversed == true {
 		reverse(columns)
 	}
 	var startIColumn IColumn
-	if config.GetColumnTypeTableName(m.tableName, filter.path.columnFamilyName) == "Standard" {
+	if config.GetColumnTypeTableName(m.tableName, filter.path.ColumnFamilyName) == "Standard" {
 		startIColumn = NewColumn(string(filter.start), "", 0, false)
 	} else {
 		startIColumn = NewSuperColumn(string(filter.start))

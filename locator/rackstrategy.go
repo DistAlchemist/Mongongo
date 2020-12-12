@@ -19,6 +19,7 @@ type IStrategy interface {
 	GetStorageEndPoints(token string) []network.EndPoint
 	GetTokenEndPointMap() map[string]network.EndPoint
 	GetToken(endPoint network.EndPoint) string
+	GetReadStorageEndPoints(token string) map[network.EndPoint]bool
 	// GetHintedStorageEndPoints(token *big.Int) map[network.EndPoint]network.EndPoint
 }
 
@@ -92,3 +93,8 @@ func retrofitPorts(list []network.EndPoint) {
 // func (r *RackStrategy) GetStorageEndPoints(token *big.Int) map[network.EndPoint]network.EndPoint {
 // 	return make(map[network.EndPoint]network.EndPoint)
 // }
+
+// GetReadStorageEndPoints ...
+func (r *RackStrategy) GetReadStorageEndPoints(token string) map[network.EndPoint]bool {
+	return map[network.EndPoint]bool{}
+}

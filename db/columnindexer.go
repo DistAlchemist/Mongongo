@@ -20,7 +20,7 @@ type ColumnIndexer struct{}
 
 func (c *ColumnIndexer) serialize(columnFamily *ColumnFamily, dos []byte) {
 	// currently it is sorted by key string
-	columns := columnFamily.getSortedColumns()
+	columns := columnFamily.GetSortedColumns()
 	bf := c.createColumnBloomFilter(columns)
 	// write out the bloom filter
 	buf := make([]byte, 0)
@@ -44,7 +44,7 @@ func (c *ColumnIndexer) createColumnBloomFilter(columns []IColumn) *utils.BloomF
 		// we need to get the subColumns too
 		_, ok := column.(SuperColumn)
 		if ok {
-			subColumns := column.getSubColumns()
+			subColumns := column.GetSubColumns()
 			for _, subColumn := range subColumns {
 				bf.Fill(subColumn.getName())
 			}

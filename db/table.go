@@ -148,12 +148,12 @@ func (t *Table) getNumberOfColumnFamilies() int {
 // table. Then the data associated with the individual column
 // families is also written to the column family store's memtable
 func (t *Table) apply(row *Row) {
-	key := row.key
+	key := row.Key
 	// add row to commit log
 	start := time.Now().UnixNano() / int64(time.Millisecond)
 	// cLogCtx := openCommitLog(t.tableName).add(row) // first write to commitlog
 	cLogCtx := openCommitLogE().add(row) // first write to commitlog
-	for cName, columnFamily := range row.columnFamilies {
+	for cName, columnFamily := range row.ColumnFamilies {
 		cfStore := t.columnFamilyStores[cName]
 		cfStore.apply(key, columnFamily, cLogCtx) // then write to memtable
 	}
@@ -164,4 +164,14 @@ func (t *Table) apply(row *Row) {
 
 func (t *Table) getColumnFamilyID(cfName string) int {
 	return t.tableMetadata.getColumnFamilyID(cfName)
+}
+
+func (t *Table) getRow(filter QueryFilter) *Row {
+	cfStore := t.columnFamilyStores[filter.getPath().ColumnFamilyName]
+	row := NewRowT(t.tableName, filter.getKey())
+	columnFamily := cfStore.getColumnFamily(filter)
+	if columnFamily != nil {
+		row.addColumnFamily(columnFamily)
+	}
+	return row
 }

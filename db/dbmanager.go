@@ -125,11 +125,11 @@ func sysInitMetadata() *StorageMetadata {
 	}
 	// reach here means that we crashed and came back up
 	// so we need to bump generation number
-	tokenColumn := cf.getColumn(sysToken)
+	tokenColumn := cf.GetColumn(sysToken)
 	token := string(tokenColumn.getValue())
 	log.Print("saved token found: ", token)
 
-	generation := cf.getColumn(sysGeneration)
+	generation := cf.GetColumn(sysGeneration)
 	gen, err := strconv.Atoi(string(generation.getValue()))
 	gen++
 	if err != nil {

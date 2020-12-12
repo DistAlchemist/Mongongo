@@ -477,7 +477,7 @@ func removeDeleted(cf *ColumnFamily, gcBefore int) *ColumnFamily {
 			// create a new super column and add in the subcolumns
 			cf.remove(cname)
 			sc := c.(SuperColumn).cloneMeShallow()
-			for _, subColumn := range c.getSubColumns() {
+			for _, subColumn := range c.GetSubColumns() {
 				if subColumn.timestamp() > minTimestamp {
 					if !subColumn.isMarkedForDelete() || subColumn.getLocalDeletionTime() > gcBefore {
 						sc.addColumn(subColumn)
@@ -697,16 +697,16 @@ func (c *ColumnFamilyStore) getColumnFamilyGC(filter QueryFilter, gcBefore int) 
 	start := getCurrentTimeInMillis()
 	// if we are querying subcolumns of a supercolumn, fetch the
 	// supercolumn with NameQueryFilter, then filter in-memory
-	if filter.getPath().superColumnName != nil {
+	if filter.getPath().SuperColumnName != nil {
 		nameFilter := NewNamesQueryFilter(
 			filter.getKey(),
 			NewQueryPathCF(c.columnFamilyName),
-			filter.getPath().superColumnName)
+			filter.getPath().SuperColumnName)
 		cf := c.getColumnFamily(nameFilter)
 		if cf == nil || cf.getColumnCount() == 0 {
 			return cf
 		}
-		sc := cf.getSortedColumns()[0].(SuperColumn)
+		sc := cf.GetSortedColumns()[0].(SuperColumn)
 		scFiltered := filter.filterSuperColumn(sc, gcBefore)
 		cfFiltered := cf.cloneMeShallow()
 		cfFiltered.addColumn(scFiltered)
@@ -720,7 +720,7 @@ func (c *ColumnFamilyStore) getColumnFamilyGC(filter QueryFilter, gcBefore int) 
 	returnCF := iter.getColumnFamily()
 	iterators = append(iterators, iter)
 	// add the memtable being flushed
-	memtables := getUnflushedMemtables(filter.getPath().columnFamilyName)
+	memtables := getUnflushedMemtables(filter.getPath().ColumnFamilyName)
 	for _, memtable := range memtables {
 		iter = filter.getMemColumnIterator(memtable)
 		returnCF.deleteCF(iter.getColumnFamily())

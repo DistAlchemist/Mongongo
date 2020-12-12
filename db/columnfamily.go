@@ -86,11 +86,11 @@ func (cf *ColumnFamily) addColumn(column IColumn) {
 // here it is ignored.
 func (cf *ColumnFamily) addColumnQP(path *QueryPath, value string, timestamp int64, deleted bool) {
 	var column IColumn
-	if path.superColumnName == nil {
-		column = NewColumn(string(path.columnName), value, timestamp, deleted)
+	if path.SuperColumnName == nil {
+		column = NewColumn(string(path.ColumnName), value, timestamp, deleted)
 	} else {
-		column = NewSuperColumn(string(path.superColumnName))
-		column.addColumn(NewColumn(string(path.columnFamilyName), value, timestamp, deleted))
+		column = NewSuperColumn(string(path.SuperColumnName))
+		column.addColumn(NewColumn(string(path.ColumnFamilyName), value, timestamp, deleted))
 	}
 	cf.addColumn(column)
 }
@@ -99,7 +99,13 @@ func (cf *ColumnFamily) isSuper() bool {
 	return cf.ColumnType == "Super"
 }
 
-func (cf *ColumnFamily) getColumn(name string) IColumn {
+// IsSuper ...
+func (cf *ColumnFamily) IsSuper() bool {
+	return cf.ColumnType == "Super"
+}
+
+// GetColumn ...
+func (cf *ColumnFamily) GetColumn(name string) IColumn {
 	return cf.Columns[name]
 }
 
@@ -186,7 +192,8 @@ func (cf *ColumnFamily) remove(columnName string) {
 	delete(cf.Columns, columnName)
 }
 
-func (cf *ColumnFamily) getSortedColumns() []IColumn {
+// GetSortedColumns ...
+func (cf *ColumnFamily) GetSortedColumns() []IColumn {
 	cnames := make([]string, 0)
 	for name := range cf.Columns {
 		cnames = append(cnames, name)

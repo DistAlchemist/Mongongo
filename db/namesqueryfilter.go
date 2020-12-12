@@ -21,6 +21,15 @@ func NewNamesQueryFilter(key string, columnParent *QueryPath, column []byte) Que
 	n.columns = append(n.columns, column)
 	return n
 }
+
+// NewNamesQueryFilterS ...
+func NewNamesQueryFilterS(key string, columnParent *QueryPath, columns [][]byte) QueryFilter {
+	n := &NamesQueryFilter{}
+	n.key = key
+	n.path = columnParent
+	n.columns = columns
+	return n
+}
 func (n *NamesQueryFilter) getKey() string {
 	return ""
 }

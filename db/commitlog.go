@@ -193,7 +193,7 @@ func (c *CommitLog) maybeUpdateHeader(row *Row) {
 	// update the header of the commit log if a
 	// new column family is encountered for the
 	// first time
-	table := openTable(row.table)
+	table := openTable(row.Table)
 	for cfName := range row.getColumnFamilies() {
 		id := table.getColumnFamilyID(cfName)
 		if c.clHeader.isDirty(id) == false {

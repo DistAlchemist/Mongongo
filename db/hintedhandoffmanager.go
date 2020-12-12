@@ -49,10 +49,10 @@ func DeliverHintsToEndpoint(endpoint *network.EndPoint) {
 		if hintedColumnFamily == nil {
 			continue
 		}
-		keys := hintedColumnFamily.getSortedColumns()
+		keys := hintedColumnFamily.GetSortedColumns()
 		for _, keyColumn := range keys {
 			keyStr := keyColumn.getName()
-			endpoints := keyColumn.getSubColumns()
+			endpoints := keyColumn.GetSubColumns()
 			for _, hintEndPoint := range endpoints {
 				if hintEndPoint.getName() == targetEPBytes && sendMessage(endpoint.HostName, "", keyStr) {
 					deleteEndPoint(hintEndPoint.getName(), tableName, keyColumn.getName(), keyColumn.timestamp())
@@ -88,9 +88,9 @@ func (h *HintedHandOffManager) deliverAllHints(hintStore *ColumnFamilyStore) {
 		if hintColumnFamily == nil {
 			continue
 		}
-		keys := hintColumnFamily.getSortedColumns()
+		keys := hintColumnFamily.GetSortedColumns()
 		for _, keyColumn := range keys {
-			endpoints := keyColumn.getSubColumns()
+			endpoints := keyColumn.GetSubColumns()
 			keyStr := keyColumn.getName()
 			deleted := 0
 			for endpointStr := range endpoints {
@@ -135,17 +135,17 @@ func deleteHintedData(tableName, key string) {
 	for _, cf := range cfs {
 		maxTS := int64(math.MinInt64)
 		if cf.isSuper() == false {
-			for _, col := range cf.getSortedColumns() {
+			for _, col := range cf.GetSortedColumns() {
 				if col.timestamp() > maxTS {
 					maxTS = col.timestamp()
 				}
 			}
 		} else {
-			for _, col := range cf.getSortedColumns() {
+			for _, col := range cf.GetSortedColumns() {
 				if col.timestamp() > maxTS {
 					maxTS = col.timestamp()
 				}
-				subColumns := col.getSubColumns()
+				subColumns := col.GetSubColumns()
 				for _, subCol := range subColumns {
 					if subCol.timestamp() > maxTS {
 						maxTS = subCol.timestamp()

@@ -33,3 +33,8 @@ func (ras *RackAwareStrategy) GetTokenEndPointMap() map[string]network.EndPoint 
 func (ras *RackAwareStrategy) GetToken(endPoint network.EndPoint) string {
 	return ras.tokenMetadata.GetToken(endPoint)
 }
+
+// GetReadStorageEndPoints ...
+func (ras *RackAwareStrategy) GetReadStorageEndPoints(token string) map[network.EndPoint]bool {
+	return map[network.EndPoint]bool{}
+}

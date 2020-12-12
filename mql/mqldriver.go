@@ -6,6 +6,7 @@
 package mql
 
 import (
+	"fmt"
 	"log"
 	"net/rpc"
 	"time"
@@ -127,4 +128,56 @@ func getTableName(ast *node) string {
 	return ast.children[0].text
 }
 
-func executeGet(ast *node) {}
+func executeGet(ast *node) {
+	// execute get statement
+	// getStmt.columnSpec
+	childCount := len(ast.children)
+	if childCount != 1 {
+		log.Fatalf("GET should only has columnSpec\n")
+	}
+	columnFamilySpec := ast.children[0]
+	tableName := getTableName(columnFamilySpec)
+	key := getKey(columnFamilySpec)
+	columnFamily := getColumnFamily(columnFamilySpec)
+	columnSpecCnt := numColumnSpecifiers(columnFamilySpec)
+	// assume simple columnFamily for now
+	if columnSpecCnt == 0 {
+		// get table.cf['key']
+		srange := service.NewSliceRange(nil, nil, true, 1000000)
+		args := service.GetSliceArgs{}
+		args.Keyspace = tableName
+		args.Key = key
+		args.ColumnParent = service.NewColumnParent(columnFamily, nil)
+		args.Predicate = service.NewSlicePredicate(nil, srange)
+		args.ConsistencyLevel = 1
+		reply := service.GetSliceReply{}
+		err := cc.Call("Mongongo.GetSlice", &args, &reply)
+		if err != nil {
+			log.Fatal("calling:", err)
+		}
+		columns := reply.Columns
+		size := len(columns)
+		for _, cosc := range columns {
+			column := cosc.Column
+			fmt.Printf("column=%v, value=%v, timestamp=%v\n", column.Name,
+				column.Value, column.Timestamp)
+		}
+		fmt.Printf("returned %v rows.\n", size)
+	} else {
+		// get table.cf['key']['column']
+		columnName := getColumn(columnFamilySpec, 0)
+		args := service.GetArgs{}
+		args.Keyspace = tableName
+		args.Key = key
+		args.ColumnPath = service.NewColumnPath(columnFamily, nil, []byte(columnName))
+		args.ConsistencyLevel = 1
+		reply := service.GetReply{}
+		err := cc.Call("Mongongo.Get", &args, &reply)
+		if err != nil {
+			log.Fatal("calling:", err)
+		}
+		column := reply.Cosc.Column
+		fmt.Printf("name=%v, value=%v, timestamp=%v\n", column.Name,
+			column.Value, column.Timestamp)
+	}
+}
