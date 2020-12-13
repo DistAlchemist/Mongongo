@@ -69,7 +69,7 @@ bin/cli
 
 ## Design
 
-* The design mostly follow the *very* early version of [Cassandra](https://github.com/apache/cassandra)
+* The design mostly follows the *very* early version of [Cassandra](https://github.com/apache/cassandra)
 
 * Currently only simple `SET` and `GET` operation is supported:
 
