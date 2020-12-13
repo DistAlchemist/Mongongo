@@ -176,7 +176,7 @@ func (ss *StorageService) runBootStrap(targets []*network.EndPoint, tokens ...st
 
 // func (ss *StorageService) getRangeWithSourceTarget() map[dht.Range]
 
-// DoRowMutation as a rpc served by storage service
+// DoRowMutation is an rpc served by storage service
 func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowMutationReply) error {
 	fmt.Println("enter DoRowMutation")
 	db.DoRowMutation(args, reply)
@@ -184,6 +184,25 @@ func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowM
 	// args.RM.Apply(db.NewRow(args.RM.RowKey))
 	// reply.Result = "DoRowMutation success"
 	return nil
+}
+
+// DoRowRead is an rpc served by storage service
+func (ss *StorageService) DoRowRead(args *db.RowReadArgs, reply *db.RowReadReply) error {
+	fmt.Println("enter DoRowRead")
+	db.DoRowRead(args, reply)
+	if args.HeaderKey == db.DoREPAIR {
+		ss.doReadRepair(reply.R, args.RCommand)
+	}
+	return nil
+}
+
+func (ss *StorageService) doReadRepair(row *db.Row, readCommand db.ReadCommand) {
+	endpoints := ss.getLiveReadStorageEndPoints(readCommand.GetKey())
+	// remove the local storage endpoint from the list
+	remove(endpoints, *ss.tcpAddr)
+	if len(endpoints) > 0 && config.DoConsistencyCheck {
+		ss.doConsistencyCheck(row, endpoints, readCommand)
+	}
 }
 
 func (ss *StorageService) getReadStorageEndPoints(key string) map[network.EndPoint]bool {
@@ -265,4 +284,36 @@ func (ss *StorageService) getHintedStorageEndpointMap(key string) map[network.En
 func (ss *StorageService) doConsistencyCheck(row *db.Row, endpoints []network.EndPoint, command db.ReadCommand) {
 	// TODO
 	// go runConsistency
+}
+
+func (ss *StorageService) findSuitableEndPoint(key string) network.EndPoint {
+	// this function finds the most suitable endpoint given a key
+	// it checks for locality and alive test
+	endpoints := ss.getReadStorageEndPoints(key)
+	for endpoint := range endpoints {
+		if endpoint == *ss.tcpAddr {
+			return endpoint
+		}
+	}
+	for endpoint := range endpoints {
+		if ss.isInSameDataCenter(endpoint) && gms.GetFailureDetector().IsAlive(endpoint) {
+			return endpoint
+		}
+	}
+	// we have tried to be really nice but looks like there are no servers
+	// in the local data center that are alive and can service this request
+	// so just seed it to the first alive guy and see if we get anything
+	for endpoint := range endpoints {
+		if gms.GetFailureDetector().IsAlive(endpoint) {
+			log.Printf("endpoint %v is alive so get data from it\n", endpoint)
+			return endpoint
+		}
+	}
+	return network.EndPoint{}
+}
+
+func (ss *StorageService) isInSameDataCenter(endpoint network.EndPoint) bool {
+	// given an endpoint this method will report if the endpoint
+	// is in the same data center as the local storage endpoint
+	return locator.IsOnSameDataCenter(*ss.tcpAddr, endpoint)
 }

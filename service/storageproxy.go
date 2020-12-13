@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"net/rpc"
+	"time"
 
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/db"
@@ -186,11 +187,59 @@ func weakReadLocal(commands []db.ReadCommand) []*db.Row {
 }
 
 func weakReadRemote(commands []db.ReadCommand) []*db.Row {
-	// TODO
-	return make([]*db.Row, 0)
+	// read the data from one replica. if there is no reply,
+	// read the data from another. in the event we get the
+	// data we perform consistency checks and figure out if
+	// any repairs need to be done to the replicas.
+	log.Printf("weakrealremote reading %v\n", commands)
+	rows := make([]*db.Row, 0)
+	divCalls := make([]*rpc.Call, 0)
+	replys := make([]*db.RowReadReply, 0)
+	endpoints := make([]network.EndPoint, 0)
+	for _, command := range commands {
+		endpoint := GetInstance().findSuitableEndPoint(command.GetKey())
+		endpoints = append(endpoints, endpoint)
+		message := db.RowReadArgs{}
+		message.From = *GetInstance().tcpAddr
+		message.RCommand = command
+		message.HeaderKey = db.DoREPAIR
+		reply := db.RowReadReply{}
+		to := endpoint
+		client, err := rpc.DialHTTP("tcp", to.HostName+":"+config.StoragePort)
+		if err != nil {
+			log.Fatal("dialing: ", err)
+		}
+		divCall := client.Go("StorageService.DoRowRead", &message, &reply, nil)
+		replys = append(replys, &reply)
+		divCalls = append(divCalls, divCall)
+	}
+	for idx, divCall := range divCalls {
+		select {
+		case _ = <-divCall.Done:
+			if replys[idx].R != nil {
+				rows = append(rows, replys[idx].R)
+			}
+		case <-time.After(time.Duration(config.RPCTimeoutInMillis) * time.Millisecond):
+			log.Printf("timeout calling %v for command %v\n", endpoints[idx], commands[idx])
+		}
+	}
+	return rows
 }
 
 func strongRead(commands []db.ReadCommand) []*db.Row {
+	// this function executes the read protocol
+	// 1. get the N nodes from storage service where
+	//    the data needs to be replicated
+	// 2. construct a message for read/write
+	// 3. set one of the messages to get the data and
+	//    the rest to get the digest
+	// 4. send message to all the nodes above
+	// 5. wait for response from at least X nodes
+	//    where X <= N and the data node
+	// 6. if the digest matches return the data
+	// 7. else carry out read repair by getting data from
+	//    all the nodes
+	// 8. return success
 	// TODO
 	return make([]*db.Row, 0)
 }

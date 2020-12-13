@@ -15,7 +15,10 @@ import (
 )
 
 // HINT string
-var HINT = "HINT"
+var (
+	HINT     = "HINT"
+	DoREPAIR = "READ-REPAIR"
+)
 
 // RowMutation definition
 type RowMutation struct {
