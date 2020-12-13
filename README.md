@@ -4,7 +4,7 @@
 
 # Mongongo
 
-Cassandra and Zookeeper in Go.
+Cassandra in Go.
 
 ## Getting Started
 
@@ -47,26 +47,35 @@ sudo apt install tmux
 tmux new -s mg
 ```
 
+* Build files:
+
+```shell
+cd $mg
+cd Mongongo
+make
+```
+
 * Inside one terminal, run Mongongo server:
 
 ```shell
-go run cmd/mgserver/main.go
+bin/mg-server
 ```
 
 * Inside another terminal, run command line interface:
 
 ```shell
-go run cmd/cli/main.go
+bin/cli 
 ```
 
 ## Design
 
-* The design mostly follow the first commit version of [Cassandra](https://github.com/apache/cassandra)
+* The design mostly follow the *very* early version of [Cassandra](https://github.com/apache/cassandra)
 
-* Currently only a dummy `SET` operation is supported:
+* Currently only simple `SET` and `GET` operation is supported:
 
 ```shell
-SET tableName.columnFamilyName['rowKey']['columnKey'] = 'value'
+ SET table1.standardCF1['row1']['column1']='value' 
+ GET table1.standardCF1['row1']['column1'] 
 ```
 
 * The project is roughly divided into three layers:
@@ -75,55 +84,17 @@ SET tableName.columnFamilyName['rowKey']['columnKey'] = 'value'
   * Storage Layer (perform specific operation, update commitLog, memTable, ssTable etc.)
 
 * TODO
-  * Rewrite a comprehensive SQL parser.
-  * Build storage layer.
-  * Add zookeeper-like support.
+  * Add more tests.
+  * Strengthen QL support.
+
 
 
 ## Contributing
 
-* First clone the repo:
-
-```shell
-cd $mg 
-git clone https://github.com/DistAlchemist/Mongongo.git
-# or git clone git@github.com:DistAlchemist/Mongongo.git
-```
-
-or sync with the remote:
-
-```shell
-git fetch origin
-git checkout master
-git rebase origin/master
-```
-
-* Create a new branch `dev-featurename` 
-
-```shell
-git checkout -b dev-test
-```
-
-* After you have made some progess, first commit it locally:
-
-```shell
-git status 
-# make sure to add unwanted files to .gitignore
-git add . # add all change files 
-git commit -m "rewrite sql parser" # commit locally
-```
-
-* You may commit many times locally. Once you feel good about your branch, push it to remote.
-
-```shell
-git push origin dev-test # push local branch to origin with branch name `dev-test`
-```
-
-* Then view [https://github.com/DistAlchemist/Mongongo](https://github.com/DistAlchemist/Mongongo), Click the Compare & Pull Request button next to your `dev-test` branch.
-
+* See [CONTRIBUTING](./CONTRIBUTING.md)
 ## Example
 
-![mongongo](pics/mongongo2.gif)
+![mongongo](pics/mongongo3.gif)
 
 ## License
 
