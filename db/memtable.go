@@ -100,7 +100,7 @@ func (m *Memtable) isThresholdViolated() bool {
 
 func (m *Memtable) flush(cLogCtx *CommitLogContext) {
 	// flush this memtable to disk
-	cfStore := openTable(m.tableName).columnFamilyStores[m.cfName]
+	cfStore := OpenTable(m.tableName).columnFamilyStores[m.cfName]
 	writer := NewSSTableWriter(cfStore.getTmpSSTablePath(), len(m.columnFamilies))
 	// sort keys in the order they would be in when decorated
 	orderedKeys := make([]string, 0)

@@ -96,5 +96,6 @@ func retrofitPorts(list []network.EndPoint) {
 
 // GetReadStorageEndPoints ...
 func (r *RackStrategy) GetReadStorageEndPoints(token string) map[network.EndPoint]bool {
-	return map[network.EndPoint]bool{}
+	// return map[network.EndPoint]bool{}
+	return r.I.GetReadStorageEndPoints(token)
 }

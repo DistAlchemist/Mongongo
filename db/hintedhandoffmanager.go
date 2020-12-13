@@ -43,7 +43,7 @@ func DeliverHintsToEndpoint(endpoint *network.EndPoint) {
 	// 1. scan through all the keys that we need to handoff
 	// 2. for each key read the list of recipients if the endpoint matches send
 	// 3. delete that recipient from theke if write was successful
-	systemTable := openTable(config.SysTableName)
+	systemTable := OpenTable(config.SysTableName)
 	for _, tableName := range config.GetTables() {
 		hintedColumnFamily := systemTable.getCF(tableName, config.HintsCF)
 		if hintedColumnFamily == nil {
@@ -129,7 +129,7 @@ func deleteHintedData(tableName, key string) {
 	// rely on the other consistency mechanisms to
 	// finish the job in this corner case.
 	rm := NewRowMutation(tableName, key)
-	table := openTable(tableName)
+	table := OpenTable(tableName)
 	row := table.get(key) // not necessary to do removeDeleted here
 	cfs := row.getColumnFamilies()
 	for _, cf := range cfs {
@@ -163,7 +163,7 @@ func sendMessage(endpointAddr, tableName, key string) bool {
 	if !gms.GetFailureDetector().IsAlive(*endPoint) {
 		return false
 	}
-	table := openTable(tableName)
+	table := OpenTable(tableName)
 	row := table.get(key)
 	purgedRow := NewRow(key)
 	for _, cf := range row.getColumnFamilies() {

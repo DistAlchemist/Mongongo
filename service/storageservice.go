@@ -190,6 +190,19 @@ func (ss *StorageService) getReadStorageEndPoints(key string) map[network.EndPoi
 	return ss.nodePicker.GetReadStorageEndPoints(ss.partitioner.GetToken(key))
 }
 
+func (ss *StorageService) getLiveReadStorageEndPoints(key string) []network.EndPoint {
+	// this method attemps to return N endpoints that are responsible
+	// for storing the specified key for replication
+	liveEps := make([]network.EndPoint, 0)
+	endpoints := ss.getReadStorageEndPoints(key)
+	for endpoint := range endpoints {
+		if gms.GetFailureDetector().IsAlive(endpoint) {
+			liveEps = append(liveEps, endpoint)
+		}
+	}
+	return liveEps
+}
+
 func (ss *StorageService) deliverHints(endpoint *network.EndPoint) {
 	db.GetHintedHandOffManagerInstance()
 }
@@ -247,4 +260,9 @@ func (ss *StorageService) OnChange(endpoint network.EndPoint, epState *gms.EndPo
 
 func (ss *StorageService) getHintedStorageEndpointMap(key string) map[network.EndPoint]network.EndPoint {
 	return ss.nodePicker.GetHintedStorageEndPoints(ss.partitioner.GetToken(key))
+}
+
+func (ss *StorageService) doConsistencyCheck(row *db.Row, endpoints []network.EndPoint, command db.ReadCommand) {
+	// TODO
+	// go runConsistency
 }

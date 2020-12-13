@@ -95,7 +95,7 @@ func (rm *RowMutation) Add(columnFamilyColumn, value string, timestamp int64) {
 // applies the changes to the table that is obtained
 // by calling Table.open()
 func (rm *RowMutation) Apply(row *Row) {
-	table := openTable(rm.TableName)
+	table := OpenTable(rm.TableName)
 	for cfName := range rm.Modification {
 		if !table.isValidColumnFamily(cfName) {
 			log.Printf("Column Family %v has not been defined.", cfName)

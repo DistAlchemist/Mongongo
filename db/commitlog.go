@@ -93,7 +93,7 @@ func createCLWriter(file string) *os.File {
 
 func (c *CommitLog) writeCommitLogHeader() {
 	// writes a header with all bits set to zero
-	table := openTable(c.table)
+	table := OpenTable(c.table)
 	cfSize := table.getNumberOfColumnFamilies() // number of cf
 	c.commitHeaderStartPos = 0
 	// write the commit log header
@@ -193,7 +193,7 @@ func (c *CommitLog) maybeUpdateHeader(row *Row) {
 	// update the header of the commit log if a
 	// new column family is encountered for the
 	// first time
-	table := openTable(row.Table)
+	table := OpenTable(row.Table)
 	for cfName := range row.getColumnFamilies() {
 		id := table.getColumnFamilyID(cfName)
 		if c.clHeader.isDirty(id) == false {
@@ -401,7 +401,7 @@ func (c *CommitLog) onMemtableFlush(tableName, cf string, cLogCtx *CommitLogCont
 	// The bit flag associated with this column family is set
 	// in the header and this is used to decide if the log
 	// file can be deleted.
-	table := openTable(tableName)
+	table := OpenTable(tableName)
 	id := table.tableMetadata.cfIDMap[cf]
 	c.discard(cLogCtx, id)
 }

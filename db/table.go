@@ -29,7 +29,7 @@ type Table struct {
 	columnFamilyStores map[string]*ColumnFamilyStore
 }
 
-func openTable(table string) *Table {
+func OpenTable(table string) *Table {
 	tableInstance, ok := tableInstances[table]
 	if !ok {
 		// read config to know the column families for

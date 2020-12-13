@@ -77,5 +77,69 @@ func (rus *RackUnawareStrategy) getStorageEndPoints(token string, tokenEndPointM
 
 // GetReadStorageEndPoints ...
 func (rus *RackUnawareStrategy) GetReadStorageEndPoints(token string) map[network.EndPoint]bool {
-	return map[network.EndPoint]bool{}
+	return rus.GetReadStorageEndPointsM(token, rus.tokenMetadata.tokenToEndPointMap)
+}
+
+// GetReadStorageEndPointsM ...
+func (rus *RackUnawareStrategy) GetReadStorageEndPointsM(token string, tokenToEndPointMap map[string]network.EndPoint) map[network.EndPoint]bool {
+	tokenList := rus.getStorageTokens(token, tokenToEndPointMap, nil)
+	list := make([]network.EndPoint, 0)
+	for _, t := range tokenList {
+		list = append(list, tokenToEndPointMap[t])
+	}
+	retrofitPorts(list)
+	res := make(map[network.EndPoint]bool)
+	for _, l := range list {
+		res[l] = true
+	}
+	return res
+}
+
+func (rus *RackUnawareStrategy) getStorageTokens(token string, tokenToEndPointMap map[string]network.EndPoint,
+	bootStrapTokenToEndPointMap map[string]network.EndPoint) []string {
+	var startIndex int
+	tokenList := make([]string, 0)
+	foundCnt := 0
+	tokens := make([]string, 0)
+	for t := range tokenToEndPointMap {
+		tokens = append(tokens, t)
+	}
+	var bsTokens []string
+	if bootStrapTokenToEndPointMap != nil {
+		bsTokens = make([]string, 0)
+		for t := range bootStrapTokenToEndPointMap {
+			tokens = append(tokens, t)
+		}
+	}
+	sort.Strings(tokens)
+	index := sort.SearchStrings(tokens, token)
+	totalNodes := len(tokens)
+	// add the token at the index by default
+	tokenList = append(tokenList, tokens[index])
+	if bsTokens == nil || containS(bsTokens, tokens[index]) == false {
+		foundCnt++
+	}
+	startIndex = (index + 1) % totalNodes
+	// if we found N number of nodes we are good. this loop
+	// will just exit. otherwise just loop through the list
+	// and add until we have N nodes
+	for i, count := startIndex, 1; count < totalNodes && foundCnt < config.ReplicationFactor; count, i = count+1, (i+1)%totalNodes {
+		if containS(tokenList, tokens[i]) == false {
+			tokenList = append(tokenList, tokens[i])
+			// don't count bootstrapping tokens towards the count
+			if bsTokens == nil || containS(bsTokens, tokens[i]) == false {
+				foundCnt++
+			}
+		}
+	}
+	return tokenList
+}
+
+func containS(list []string, elem string) bool {
+	for _, e := range list {
+		if e == elem {
+			return true
+		}
+	}
+	return false
 }

@@ -46,7 +46,7 @@ func (d *Manager) init() {
 	tableToColumnFamily := config.Init()
 	storeMetadata(tableToColumnFamily)
 	for table := range tableToColumnFamily {
-		tbl := openTable(table)
+		tbl := OpenTable(table)
 		tbl.onStart()
 	}
 	recoveryMgr := GetRecoveryManager()
@@ -106,7 +106,7 @@ func sysInitMetadata() *StorageMetadata {
 	}
 	// read the sytem table to retrieve the storage ID
 	// and the generation
-	table := openTable(config.SysTableName)
+	table := OpenTable(config.SysTableName)
 	filter := NewIdentityQueryFilter(sysLocationKey, NewQueryPathCF(sysLocationCF))
 	cf := table.getColumnFamilyStore(sysLocationCF).getColumnFamily(filter)
 	p := dht.RandomPartInstance // hard code here

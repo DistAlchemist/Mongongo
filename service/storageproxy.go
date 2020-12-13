@@ -144,9 +144,45 @@ func readProtocol(commands []db.ReadCommand, consistencyLevel int) []*db.Row {
 	return rows
 }
 
+func remove(list []network.EndPoint, elem network.EndPoint) {
+	idx := 0
+	var e interface{}
+	for idx, e = range list {
+		if e == elem {
+			break
+		}
+	}
+	list = append(list[:idx], list[idx+1:]...)
+}
+
 func weakReadLocal(commands []db.ReadCommand) []*db.Row {
-	// TODO
-	return make([]*db.Row, 0)
+	// this function executes the read protocol locally
+	// and should be used only if consistency is not a
+	// concern. read the data from the local disk and
+	// return if the row is NOT NULL. if the data is NULL
+	// do the read from one of the other replicas (in the
+	// same data center if possible) till we get the data.
+	// in the event we get the data we perform consistency
+	// checks and figure out if any repairs need to be done
+	// to the replicas
+	rows := make([]*db.Row, 0)
+	for _, command := range commands {
+		endpoints := GetInstance().getLiveReadStorageEndPoints(command.GetKey())
+		// remove the local storage endpoint from the list
+		remove(endpoints, *GetInstance().tcpAddr)
+		log.Printf("weakreadlocal reading %v\n", command)
+		table := db.OpenTable(command.GetTable())
+		row := command.GetRow(table)
+		if row != nil {
+			rows = append(rows, row)
+		}
+		// do the consistency checks in the background and return
+		// the not NILL row
+		if len(endpoints) > 0 && config.DoConsistencyCheck {
+			GetInstance().doConsistencyCheck(row, endpoints, command)
+		}
+	}
+	return rows
 }
 
 func weakReadRemote(commands []db.ReadCommand) []*db.Row {
