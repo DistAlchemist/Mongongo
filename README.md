@@ -1,8 +1,11 @@
+![cingo](pics/cingo2.png)
+
+
+# Mongongo
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Language](https://img.shields.io/badge/Language-Go-blue.svg)](https://golang.org/)
 ![build](https://github.com/DistAlchemist/Mongongo/workflows/Go/badge.svg)
-
-# Mongongo
 
 Cassandra in Go.
 
