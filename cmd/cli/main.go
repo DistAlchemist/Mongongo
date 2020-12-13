@@ -63,7 +63,8 @@ func printHelp() {
 	// fmt.Printf("\tSET tableName.columnFamilyName['rowKey']['column']='value'\n")
 	fmt.Printf("keywords(case insensitive): SET, GET, SELECT, DELETE, EXPLAIN\n\n")
 	fmt.Printf("press Ctrl-C or type exit to quit\n\n")
-	fmt.Printf("\tTry SET table2.standardCF2['row1']['column2']='value' \n\t :)\n")
+	fmt.Printf("\tTry SET table1.standardCF1['row1']['column1']='value' \n")
+	fmt.Printf("\tand GET table1.standardCF1['row1']['column1'] \n\t :)\n\n")
 }
 
 func processCLISTMT(line string) {

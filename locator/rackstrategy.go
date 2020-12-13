@@ -20,6 +20,7 @@ type IStrategy interface {
 	GetTokenEndPointMap() map[string]network.EndPoint
 	GetToken(endPoint network.EndPoint) string
 	GetReadStorageEndPoints(token string) map[network.EndPoint]bool
+	GetWriteStorageEndPoints(token string) map[network.EndPoint]bool
 	// GetHintedStorageEndPoints(token *big.Int) map[network.EndPoint]network.EndPoint
 }
 
@@ -33,20 +34,45 @@ type RackStrategy struct {
 // The value is the endpoint which is in the top N.
 // Currently it is the map of top N to live nodes.
 func (r *RackStrategy) GetHintedStorageEndPoints(token string) map[network.EndPoint]network.EndPoint {
-	topN := r.I.GetStorageEndPoints(token) // N is # of replicas, see config.ReplicationFactor
-	m := make(map[network.EndPoint]network.EndPoint)
+	return r.getHintedMapForEndpoints(r.I.GetWriteStorageEndPoints(token))
+	// topN := r.I.GetStorageEndPoints(token) // N is # of replicas, see config.ReplicationFactor
+	// m := make(map[network.EndPoint]network.EndPoint)
+	// liveList := make([]network.EndPoint, 0)
+	// for _, endPoint := range topN {
+	// 	if gms.GetFailureDetector().IsAlive(endPoint) {
+	// 		m[endPoint] = endPoint
+	// 		liveList = append(liveList, endPoint)
+	// 	} else {
+	// 		nxt, ok := r.getNextAvailableEndPoint(endPoint, topN, liveList)
+	// 		if !ok {
+	// 			m[nxt] = endPoint // map: alive -> origin
+	// 			liveList = append(liveList, nxt)
+	// 		} else {
+	// 			log.Printf("Unable to find a live endpoint, we might run out of live endpoints! dangerous!\n")
+	// 		}
+	// 	}
+	// }
+	// return m
+}
+
+func (r *RackStrategy) getHintedMapForEndpoints(topN map[network.EndPoint]bool) map[network.EndPoint]network.EndPoint {
 	liveList := make([]network.EndPoint, 0)
-	for _, endPoint := range topN {
-		if gms.GetFailureDetector().IsAlive(endPoint) {
-			m[endPoint] = endPoint
-			liveList = append(liveList, endPoint)
+	m := make(map[network.EndPoint]network.EndPoint)
+	for node := range topN {
+		if gms.GetFailureDetector().IsAlive(node) {
+			m[node] = node
+			liveList = append(liveList, node)
 		} else {
-			nxt, ok := r.getNextAvailableEndPoint(endPoint, topN, liveList)
-			if !ok {
-				m[nxt] = endPoint // map: alive -> origin
-				liveList = append(liveList, nxt)
+			tList := make([]network.EndPoint, 0)
+			for k := range topN {
+				tList = append(tList, k)
+			}
+			endPoint, ok := r.getNextAvailableEndPoint(node, tList, liveList)
+			if ok {
+				m[endPoint] = node // map hinted node => origin node
+				liveList = append(liveList, endPoint)
 			} else {
-				log.Printf("Unable to find a live endpoint, we might run out of live endpoints! dangerous!\n")
+				log.Printf("unable to find a live endpoint we might be out of live nodes\n")
 			}
 		}
 	}

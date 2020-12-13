@@ -11,8 +11,39 @@ import (
 	"bytes"
 	"encoding/gob"
 	"hash/fnv"
+	"log"
+	"os"
+	"strconv"
+	"sync"
 	"time"
 )
+
+// Logger ...
+var (
+	Logger *log.Logger
+	lmu    sync.Mutex
+)
+
+// LoggerInstance ...
+func LoggerInstance() *log.Logger {
+	lmu.Lock()
+	defer lmu.Unlock()
+	if Logger == nil {
+		timestamp := strconv.Itoa(int(CurrentTimeMillis()))
+		path := "logs"
+		name := path + string(os.PathSeparator) + "serverlog_" + timestamp
+		err := os.MkdirAll(path, 0700)
+		if err != nil {
+			log.Print(err)
+		}
+		file, err := os.Create(name)
+		if err != nil {
+			log.Print(err)
+		}
+		Logger = log.New(file, "logger> ", 0)
+	}
+	return Logger
+}
 
 // CurrentTimeMillis ...
 func CurrentTimeMillis() int64 {

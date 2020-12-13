@@ -139,7 +139,7 @@ func (g *Gossiper) startControlServer() {
 		log.Fatal(err)
 	}
 	addr := hostname + ":" + config.ControlPort
-	l, e := net.Listen("udp", addr)
+	l, e := net.Listen("tcp", addr)
 	log.Printf("ControlServer listening to %v\n", addr)
 	if e != nil {
 		log.Fatal("listen error: ", e)

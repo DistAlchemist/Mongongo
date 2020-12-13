@@ -215,15 +215,22 @@ func (sc SuperColumn) mostRecentChangeAt() int64 {
 	return res
 }
 
+// Remove ...
+func (sc SuperColumn) Remove(name string) {
+	delete(sc.Columns, name)
+}
+
 // SCSerializer ...
 var SCSerializer = NewSuperColumnSerializer()
 
 // SuperColumnSerializer ...
-type SuperColumnSerializer struct{}
+type SuperColumnSerializer struct {
+	dummy int
+}
 
 // NewSuperColumnSerializer ...
 func NewSuperColumnSerializer() *SuperColumnSerializer {
-	return &SuperColumnSerializer{}
+	return &SuperColumnSerializer{0}
 }
 
 func (s *SuperColumnSerializer) serialize(column IColumn, dos *os.File) {

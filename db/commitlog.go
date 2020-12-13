@@ -93,8 +93,9 @@ func createCLWriter(file string) *os.File {
 
 func (c *CommitLog) writeCommitLogHeader() {
 	// writes a header with all bits set to zero
-	table := OpenTable(c.table)
-	cfSize := table.getNumberOfColumnFamilies() // number of cf
+	// table := OpenTable(c.table)
+	// cfSize := table.getNumberOfColumnFamilies() // number of cf
+	cfSize := getColumnFamilyCount()
 	c.commitHeaderStartPos = 0
 	// write the commit log header
 	c.clHeader = NewCommitLogHeader(cfSize)

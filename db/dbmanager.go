@@ -11,9 +11,12 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/dht"
 	"github.com/DistAlchemist/Mongongo/network"
+	"github.com/DistAlchemist/Mongongo/utils"
 )
 
 var (
@@ -112,7 +115,7 @@ func sysInitMetadata() *StorageMetadata {
 	p := dht.RandomPartInstance // hard code here
 	if cf == nil {
 		token := p.GetDefaultToken()
-		log.Print("saved token not found. using " + token)
+		log.Print("saved token not found. using ...")
 		generation := 1
 		rm := NewRowMutation(config.SysTableName, sysLocationKey)
 		cf = createColumnFamily(config.SysTableName, sysLocationCF)
@@ -127,7 +130,7 @@ func sysInitMetadata() *StorageMetadata {
 	// so we need to bump generation number
 	tokenColumn := cf.GetColumn(sysToken)
 	token := string(tokenColumn.getValue())
-	log.Print("saved token found: ", token)
+	log.Print("saved token found")
 
 	generation := cf.GetColumn(sysGeneration)
 	gen, err := strconv.Atoi(string(generation.getValue()))
@@ -172,6 +175,9 @@ type RowMutationReply struct {
 
 // DoRowMutation ...
 func DoRowMutation(args *RowMutationArgs, reply *RowMutationReply) error {
+	utils.LoggerInstance().Printf("enter db.DoRowMutation\n")
+	log.Printf("enter db.DoRowMutation\n")
+	spew.Printf("args: %+v\n", args)
 	rm := args.RM
 	if args.HeaderKey == HINT {
 		hint := args.HeaderValue

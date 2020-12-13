@@ -8,6 +8,8 @@ package service
 import (
 	"log"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/DistAlchemist/Mongongo/db"
 )
 
@@ -71,6 +73,7 @@ func (mg *Mongongo) Insert(args *InsertArgs, reply *InsertReply) error {
 	rm.AddQ(db.NewQueryPath(columnPath.ColumnFamily, columnPath.SuperColumn, columnPath.Column),
 		value, timestamp)
 	mg.doInsert(consistencyLevel, rm)
+	reply.Result = "Success"
 	return nil
 }
 
@@ -297,9 +300,12 @@ func (mg *Mongongo) multigeteInternal(table string, keys []string, columnPath Co
 
 func (mg *Mongongo) multigetColumns(commands []db.ReadCommand, consistencyLevel int) map[string][]db.IColumn {
 	cfs := mg.readColumnFamily(commands, consistencyLevel)
+	spew.Printf("\tcfs: %#+v\n\n", cfs)
 	cfMap := make(map[string][]db.IColumn)
 	for _, command := range commands {
 		cf := cfs[command.GetKey()]
+		spew.Printf("\tcf: %#+v\n\n", cf)
+		spew.Printf("\tcommand: %#+v\n\n", command)
 		if cf == nil {
 			continue
 		}

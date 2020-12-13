@@ -5,17 +5,23 @@
 
 package db
 
-import "os"
+import (
+	"os"
+
+	"github.com/davecgh/go-spew/spew"
+)
 
 // CFSerializer ...
 var CFSerializer = NewCFSerializer()
 
 // ColumnFamilySerializer ...
-type ColumnFamilySerializer struct{}
+type ColumnFamilySerializer struct {
+	dummy int
+}
 
 // NewCFSerializer ...
 func NewCFSerializer() *ColumnFamilySerializer {
-	c := &ColumnFamilySerializer{}
+	c := &ColumnFamilySerializer{0}
 	return c
 }
 
@@ -43,6 +49,8 @@ func (c *ColumnFamilySerializer) serializeForSSTable(columnFamily *ColumnFamily,
 	columns := columnFamily.GetSortedColumns()
 	writeIntB(dos, len(columns))
 	for _, column := range columns {
+		spew.Printf("cf: %#+v\n", columnFamily)
+		spew.Printf("cf column serializer: %#+v\n", columnFamily.getColumnSerializer())
 		columnFamily.getColumnSerializer().serializeB(column, dos)
 	}
 }

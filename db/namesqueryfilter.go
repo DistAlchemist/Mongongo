@@ -31,20 +31,37 @@ func NewNamesQueryFilterS(key string, columnParent *QueryPath, columns [][]byte)
 	return n
 }
 func (n *NamesQueryFilter) getKey() string {
-	return ""
+	return n.key
 }
 func (n *NamesQueryFilter) getPath() *QueryPath {
-	return nil
+	return n.path
+}
+
+func containsC(list [][]byte, name string) bool {
+	for _, elem := range list {
+		if string(elem) == name {
+			return true
+		}
+	}
+	return false
 }
 func (n *NamesQueryFilter) filterSuperColumn(superColumn SuperColumn, gcBefore int) SuperColumn {
-	return SuperColumn{}
+	for name := range superColumn.getSubColumns() {
+		if containsC(n.columns, name) == false {
+			superColumn.Remove(name)
+		}
+	}
+	return superColumn
 }
+
 func (n *NamesQueryFilter) getMemColumnIterator(memtable *Memtable) ColumnIterator {
-	return nil
+	return memtable.getNamesIterator(n)
 }
+
 func (n *NamesQueryFilter) getSSTableColumnIterator(sstable *SSTableReader) ColumnIterator {
-	return nil
+	return NewSSTableNamesIterator(sstable, n.key, n.columns)
 }
+
 func (n *NamesQueryFilter) collectCollatedColumns(returnCF *ColumnFamily, collatedColumns *CollatedIterator, gcBefore int) {
 	return
 }

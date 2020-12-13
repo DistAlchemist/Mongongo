@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/DistAlchemist/Mongongo/config"
 )
 
@@ -58,7 +60,7 @@ func NewMemtable(table, cfName string) *Memtable {
 
 func (m *Memtable) put(key string, columnFamily *ColumnFamily) {
 	// should only be called by ColumnFamilyStore.apply
-	if m.isFrozen == false {
+	if m.isFrozen {
 		log.Fatal("memtable is frozen!")
 	}
 	m.isDirty = true
@@ -134,6 +136,20 @@ func reverse(a []IColumn) {
 	for i, j := 0, len(a)-1; i < j; i, j = i+1, j-1 {
 		a[i], a[j] = a[j], a[i]
 	}
+}
+
+func (m *Memtable) getNamesIterator(filter *NamesQueryFilter) ColumnIterator {
+	cf, ok := m.columnFamilies[filter.key]
+	spew.Printf("\tcf get from memtable: %#+v\n\n", cf)
+	var columnFamily *ColumnFamily
+	if ok == false {
+		columnFamily = createColumnFamily(m.tableName, filter.path.ColumnFamilyName)
+	} else {
+		// columnFamily = cf.cloneMeShallow()
+		columnFamily = &cf
+		spew.Printf("\tshould enter here, cf: %#+v\n\n", columnFamily)
+	}
+	return NewSColumnIterator(0, columnFamily, filter.columns)
 }
 
 // obtain an iterator of columns in this memtable in the specified

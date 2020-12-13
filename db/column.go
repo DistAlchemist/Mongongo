@@ -237,11 +237,13 @@ func (c Column) mostRecentChangeAt() int64 {
 var CSerializer = NewColumnSerializer()
 
 // ColumnSerializer ...
-type ColumnSerializer struct{}
+type ColumnSerializer struct {
+	dummy int
+}
 
 // NewColumnSerializer ...
 func NewColumnSerializer() *ColumnSerializer {
-	return &ColumnSerializer{}
+	return &ColumnSerializer{0}
 }
 
 func (c *ColumnSerializer) serialize(column IColumn, dos *os.File) {

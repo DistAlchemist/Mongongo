@@ -20,12 +20,32 @@ type TokenMetadata struct {
 	bootstrapNodes     map[string]network.EndPoint
 }
 
+// NewTokenMetadata ...
+func NewTokenMetadata() *TokenMetadata {
+	t := &TokenMetadata{}
+	t.tokenToEndPointMap = make(map[string]network.EndPoint)
+	t.endPointToTokenMap = make(map[network.EndPoint]string)
+	t.bootstrapNodes = make(map[string]network.EndPoint)
+	return t
+}
+
 // CloneTokenEndPointMap return a copy of current tokenToEndPointMap
 func (t *TokenMetadata) CloneTokenEndPointMap() map[string]network.EndPoint {
 	t.rwm.RLock()
 	defer t.rwm.RUnlock()
 	res := make(map[string]network.EndPoint, len(t.tokenToEndPointMap))
 	for k, v := range t.tokenToEndPointMap {
+		res[k] = v
+	}
+	return res
+}
+
+// CloneBootstrapNodes ...
+func (t *TokenMetadata) CloneBootstrapNodes() map[string]network.EndPoint {
+	t.rwm.RLock()
+	defer t.rwm.RUnlock()
+	res := make(map[string]network.EndPoint)
+	for k, v := range t.bootstrapNodes {
 		res[k] = v
 	}
 	return res

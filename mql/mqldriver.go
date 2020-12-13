@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/antlr/antlr4/runtime/Go/antlr"
+	"github.com/davecgh/go-spew/spew"
 
 	"github.com/DistAlchemist/Mongongo/mql/parser"
 	"github.com/DistAlchemist/Mongongo/service"
@@ -178,6 +179,10 @@ func executeGet(ast *node) {
 			log.Fatal("calling:", err)
 		}
 		column := reply.Cosc.Column
+		spew.Printf("get column: %#+v\n\n", column)
+		if column == nil {
+			return
+		}
 		fmt.Printf("name=%v, value=%v, timestamp=%v\n", column.Name,
 			column.Value, column.Timestamp)
 	}

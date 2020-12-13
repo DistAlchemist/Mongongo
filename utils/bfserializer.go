@@ -46,6 +46,15 @@ func (b *BloomFilterSerializer) SerializeB(bf *BloomFilter, dos []byte) {
 	dos = append(dos, bs...)
 }
 
+// DeserializeB deserialize bloom filter from bytes
+func (b *BloomFilterSerializer) DeserializeB(dis []byte) *BloomFilter {
+	hashes := readInt32B(dis)
+	dis = dis[4:] // skip 4 bytes
+	var bs *bitset.BitSet
+	bs.UnmarshalBinary(dis)
+	return NewBloomFilterDS(hashes, bs)
+}
+
 // Deserialize ...
 func (b *BloomFilterSerializer) Deserialize(dis *os.File) *BloomFilter {
 	hashes := readInt32(dis)

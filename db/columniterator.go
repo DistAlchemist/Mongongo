@@ -13,6 +13,39 @@ type ColumnIterator interface {
 	next() IColumn
 }
 
+// SimpleColumnIterator ...
+type SimpleColumnIterator struct {
+	curIndex     int
+	columnFamily *ColumnFamily
+	columns      [][]byte
+}
+
+// NewSColumnIterator ...
+func NewSColumnIterator(curIndex int, cf *ColumnFamily, columns [][]byte) *SimpleColumnIterator {
+	c := &SimpleColumnIterator{}
+	c.curIndex = 0
+	c.columnFamily = cf
+	c.columns = columns
+	return c
+}
+
+func (c *SimpleColumnIterator) getColumnFamily() *ColumnFamily {
+	return c.columnFamily
+}
+func (c *SimpleColumnIterator) close() {
+	return
+}
+func (c *SimpleColumnIterator) hasNext() bool {
+	return c.curIndex < len(c.columns)
+}
+func (c *SimpleColumnIterator) next() IColumn {
+	if c.hasNext() == false {
+		return nil
+	}
+	c.curIndex++
+	return c.columnFamily.GetColumn(string(c.columns[c.curIndex]))
+}
+
 // AbstractColumnIterator ...
 type AbstractColumnIterator struct {
 	curIndex     int
@@ -41,6 +74,9 @@ func (c *AbstractColumnIterator) hasNext() bool {
 }
 
 func (c *AbstractColumnIterator) next() IColumn {
+	if c.hasNext() == false {
+		return nil
+	}
 	c.curIndex++
 	return c.columns[c.curIndex-1]
 }

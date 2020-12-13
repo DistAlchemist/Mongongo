@@ -36,6 +36,7 @@ func NewColumnFamily(columnFamilyName, columnType string) *ColumnFamily {
 	cf := &ColumnFamily{}
 	cf.ColumnFamilyName = columnFamilyName
 	cf.ColumnType = columnType
+	cf.Columns = make(map[string]IColumn)
 	cf.Factory = typeToColumnFactory[columnType]
 	cf.deleteMark = false
 	if "Standard" == cf.ColumnType {
@@ -223,5 +224,9 @@ func (cf *ColumnFamily) delete(localtime int, timestamp int64) {
 }
 
 func (cf *ColumnFamily) getColumnSerializer() IColumnSerializer {
+	if cf.columnSerializer == nil {
+		// hardcoded for now .. FIXME
+		cf.columnSerializer = NewColumnSerializer()
+	}
 	return cf.columnSerializer
 }

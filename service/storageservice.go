@@ -6,6 +6,7 @@
 package service
 
 import (
+	"encoding/gob"
 	"fmt"
 	"log"
 	"net"
@@ -15,12 +16,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/db"
 	"github.com/DistAlchemist/Mongongo/dht"
 	"github.com/DistAlchemist/Mongongo/gms"
 	"github.com/DistAlchemist/Mongongo/locator"
 	"github.com/DistAlchemist/Mongongo/network"
+	"github.com/DistAlchemist/Mongongo/utils"
 )
 
 // StorageService apply functions to storage layer
@@ -28,7 +32,7 @@ type StorageService struct {
 	uptime              int64
 	storageLoadBalancer *StorageLoadBalancer
 	endpointSnitch      locator.EndPointSnitch
-	tokenMetadata       locator.TokenMetadata
+	tokenMetadata       *locator.TokenMetadata
 	nodePicker          *locator.RackStrategy
 	partitioner         dht.IPartitioner
 	storageMetadata     *db.StorageMetadata
@@ -57,16 +61,32 @@ func GetInstance() *StorageService {
 }
 
 func (ss *StorageService) init() {
+	gob.Register(db.ColumnFactory{})
+	gob.Register(db.SuperColumnFactory{})
+	gob.Register(db.SuperColumn{})
+	gob.Register(db.Column{})
+	gob.Register(network.EndPoint{})
+	gob.Register(db.RowMutation{})
+	gob.Register(db.ColumnFamily{})
+	gob.Register(db.SliceByNamesReadCommand{})
+	gob.Register(db.SliceFromReadCommand{})
+	gob.Register(gms.GossipDigest{})
+	gob.Register(gms.EndPointState{})
+	gob.Register(gms.HeartBeatState{})
+	gob.Register(gms.ApplicationState{})
+	gob.Register(ColumnPath{})
+	gob.Register(ColumnParent{})
+	gob.Register(SlicePredicate{})
 	ss.uptime = time.Now().UnixNano() / int64(time.Millisecond)
 	bootstrap := os.Getenv("bootstrap")
 	ss.isBootstrapMode = bootstrap == "true"
 	ss.storageLoadBalancer = NewStorageLoadBalancer(ss)
 	ss.endpointSnitch = locator.EndPointSnitch{}
-	ss.tokenMetadata = locator.TokenMetadata{}
+	ss.tokenMetadata = locator.NewTokenMetadata()
 	if config.RackAware == true {
-		ss.nodePicker = &locator.RackStrategy{I: &locator.RackAwareStrategy{}} // locator.RackAwareStrategy{}
+		ss.nodePicker = &locator.RackStrategy{I: &locator.RackAwareStrategy{TokenMetadata: ss.tokenMetadata}} // locator.RackAwareStrategy{}
 	} else {
-		ss.nodePicker = &locator.RackStrategy{I: &locator.RackUnawareStrategy{}} // locator.RackUnawareStrategy{}
+		ss.nodePicker = &locator.RackStrategy{I: &locator.RackUnawareStrategy{TokenMetadata: ss.tokenMetadata}} // locator.RackUnawareStrategy{}
 	}
 }
 
@@ -136,6 +156,7 @@ func (ss *StorageService) startControlServer() {
 
 // Start will setup RPC server for storage service
 func (ss *StorageService) Start() {
+
 	ss.initPartitioner()
 	ss.storageMetadata = db.GetManagerInstance().Start()
 	ss.tcpAddr = network.NewEndPoint(config.StoragePort)
@@ -178,7 +199,9 @@ func (ss *StorageService) runBootStrap(targets []*network.EndPoint, tokens ...st
 
 // DoRowMutation is an rpc served by storage service
 func (ss *StorageService) DoRowMutation(args *db.RowMutationArgs, reply *db.RowMutationReply) error {
-	fmt.Println("enter DoRowMutation")
+	log.Println("enter ss.DoRowMutation")
+	utils.LoggerInstance().Printf("enter ss.DoRowMutation\n")
+	spew.Printf("args: %+v\n", args)
 	db.DoRowMutation(args, reply)
 	// apply row mutation
 	// args.RM.Apply(db.NewRow(args.RM.RowKey))

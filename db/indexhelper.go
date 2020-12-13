@@ -8,6 +8,8 @@ package db
 import (
 	"os"
 	"sort"
+
+	"github.com/DistAlchemist/Mongongo/utils"
 )
 
 // IndexInfo ...
@@ -74,4 +76,10 @@ func indexFor(name []byte, indexList []*IndexInfo, reversed bool) int {
 				string(name) <= string(indexList[i].lastName))
 	})
 	return index
+}
+
+func defreezeBloomFilter(file *os.File) *utils.BloomFilter {
+	// size := readInt(file)
+	bytes, _ := readBytes(file)
+	return utils.BFSerializer.DeserializeB(bytes)
 }

@@ -24,6 +24,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/dht"
 	"github.com/DistAlchemist/Mongongo/network"
@@ -714,10 +716,14 @@ func (c *ColumnFamilyStore) getColumnFamilyGC(filter QueryFilter, gcBefore int) 
 	}
 	// we are querying top-level, do a merging fetch with indices
 	c.rwmu.RLock()
-	defer c.rwmu.Unlock()
+	defer c.rwmu.RUnlock()
 	iterators := make([]ColumnIterator, 0)
+	spew.Printf("\tc.memtable: %#+v\n\n", c.memtable)
 	iter := filter.getMemColumnIterator(c.memtable)
+	spew.Printf("\titer: %#+v\n\n", iter)
 	returnCF := iter.getColumnFamily()
+	spew.Printf("\treturnCF: %#+v\n\n", returnCF)
+	// return returnCF
 	iterators = append(iterators, iter)
 	// add the memtable being flushed
 	memtables := getUnflushedMemtables(filter.getPath().ColumnFamilyName)
@@ -744,6 +750,7 @@ func (c *ColumnFamilyStore) getColumnFamilyGC(filter QueryFilter, gcBefore int) 
 	}
 	c.readStats = append(c.readStats, getCurrentTimeInMillis()-start)
 	return res
+	// return iter.getColumnFamily()
 }
 
 func getUnflushedMemtables(cfName string) []*Memtable {

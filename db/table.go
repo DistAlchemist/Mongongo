@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 var (
@@ -29,6 +31,7 @@ type Table struct {
 	columnFamilyStores map[string]*ColumnFamilyStore
 }
 
+// OpenTable ...
 func OpenTable(table string) *Table {
 	tableInstance, ok := tableInstances[table]
 	if !ok {
@@ -42,11 +45,16 @@ func OpenTable(table string) *Table {
 	return tableInstance
 }
 
+func getColumnFamilyCount() int {
+	return len(idCFMap)
+}
+
 // NewTable create a Table
 func NewTable(tableName string) *Table {
 	t := &Table{}
 	t.tableName = tableName
 	t.tableMetadata = getTableMetadataInstance(t.tableName)
+	t.columnFamilyStores = make(map[string]*ColumnFamilyStore)
 	cfIDMap := t.tableMetadata.cfIDMap
 	for columnFamily := range cfIDMap {
 		t.columnFamilyStores[columnFamily] = NewColumnFamilyStore(tableName, columnFamily)
@@ -152,6 +160,8 @@ func (t *Table) apply(row *Row) {
 	// add row to commit log
 	start := time.Now().UnixNano() / int64(time.Millisecond)
 	// cLogCtx := openCommitLog(t.tableName).add(row) // first write to commitlog
+	spew.Printf("table: %v \n -- table: %+v\n", t, t)
+	log.Printf("size: %v\n", t.tableMetadata.getSize())
 	cLogCtx := openCommitLogE().add(row) // first write to commitlog
 	for cName, columnFamily := range row.ColumnFamilies {
 		cfStore := t.columnFamilyStores[cName]
@@ -170,6 +180,9 @@ func (t *Table) getRow(filter QueryFilter) *Row {
 	cfStore := t.columnFamilyStores[filter.getPath().ColumnFamilyName]
 	row := NewRowT(t.tableName, filter.getKey())
 	columnFamily := cfStore.getColumnFamily(filter)
+	spew.Printf("\tcfStore: %#+v\n\n", cfStore)
+	spew.Printf("\trow: %#+v\n\n", row)
+	spew.Printf("\tcf: %#+v\n\n", columnFamily)
 	if columnFamily != nil {
 		row.addColumnFamily(columnFamily)
 	}

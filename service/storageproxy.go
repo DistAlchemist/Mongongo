@@ -12,9 +12,12 @@ import (
 	"net/rpc"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/DistAlchemist/Mongongo/config"
 	"github.com/DistAlchemist/Mongongo/db"
 	"github.com/DistAlchemist/Mongongo/network"
+	"github.com/DistAlchemist/Mongongo/utils"
 )
 
 // RowMutationArgs for rm arguments
@@ -88,6 +91,7 @@ func insertBlocking(rm db.RowMutation, consistencyLevel int) {
 }
 
 func insert(rm db.RowMutation) {
+	log.Printf("enter insert ...")
 	// use this method to have this RowMutation applied
 	// across all replicas. This method will take care
 	// of the possiblity of a replica being down and
@@ -104,13 +108,17 @@ func insert(rm db.RowMutation) {
 	messageMap := createWriteMessage(rm, endpointMap)
 	reply := db.RowMutationReply{}
 	for endpoint, message := range messageMap {
+		utils.LoggerInstance().Printf("enter storageproxy.insert\n")
 		log.Printf("insert writing key %v to %v\n", rm.RowKey, endpoint)
 		to := endpoint
 		client, err := rpc.DialHTTP("tcp", to.HostName+":"+config.StoragePort)
 		if err != nil {
 			log.Fatal("dialing: ", err)
 		}
-		client.Call("StorageService.DoRowMutation", &message, &reply)
+		err = client.Call("StorageService.DoRowMutation", &message, &reply)
+		if err != nil {
+			log.Print(err)
+		}
 		log.Printf("row mutation status for %v: %v\n", to, reply)
 	}
 }
@@ -199,9 +207,11 @@ func weakReadLocal(commands []db.ReadCommand) []*db.Row {
 		endpoints := GetInstance().getLiveReadStorageEndPoints(command.GetKey())
 		// remove the local storage endpoint from the list
 		remove(endpoints, *GetInstance().tcpAddr)
-		log.Printf("weakreadlocal reading %v\n", command)
+		spew.Printf("\tweakreadlocal reading %#+v\n\n", command)
 		table := db.OpenTable(command.GetTable())
+		spew.Printf("\ttable: %#+v\n\n", table)
 		row := command.GetRow(table)
+		spew.Printf("\trow: %#+v\n\n", row)
 		if row != nil {
 			rows = append(rows, row)
 		}
