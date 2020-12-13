@@ -55,8 +55,36 @@ func Insert(rm db.RowMutation) {
 	return
 }
 
+func getUnhintedNodes(endpointMap map[network.EndPoint]network.EndPoint) []network.EndPoint {
+	liveEndPoints := make([]network.EndPoint, 0)
+	for k, v := range endpointMap {
+		if k == v {
+			liveEndPoints = append(liveEndPoints, k)
+		}
+	}
+	return liveEndPoints
+}
+
 func insertBlocking(rm db.RowMutation, consistencyLevel int) {
 	// TODO
+	// endpointMap := GetInstance().getHintedStorageEndpointMap(rm.RowKey)
+	// messageMap := createWriteMessage(rm, endpointMap)
+	// blockFor := consistencyLevel
+	// primaryNodes := getUnhintedNodes(endpointMap)
+	// if len(primaryNodes) < blockFor {
+	// 	log.Fatal("should gurantee blockFor = W live nodes")
+	// }
+	// reply := db.RowMutationReply{}
+	// for endpoint, message := range messageMap {
+	// 	log.Printf("insert writing key %v to %v\n", rm.RowKey, endpoint)
+	// 	to := endpoint
+	// 	client, err := rpc.DialHTTP("tcp", to.HostName+":"+config.StoragePort)
+	// 	if err != nil {
+	// 		log.Fatal("dialing: ", err)
+	// 	}
+	// 	client.Call("StorageService.DoRowMutation", &message, &reply)
+	// 	log.Printf("row mutation status for %v: %v\n", to, reply)
+	// }
 }
 
 func insert(rm db.RowMutation) {

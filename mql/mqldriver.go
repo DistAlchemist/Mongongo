@@ -90,14 +90,15 @@ func executeSet(ast *node) {
 		args.CPath = service.NewColumnPath(columnFamily, nil, []byte(columnName))
 		args.Value = []byte(value)
 		args.Timestamp = currentTimeMillis()
-		args.ConsistencyLevel = 1
+		args.ConsistencyLevel = 0
 		err := cc.Call("Mongongo.Insert", &args, &reply)
 		if err != nil {
 			log.Fatal("calling:", err)
 		}
 		log.Printf("reply.result: %+v\n", reply.Result)
+	} else {
+		log.Printf("currently only support set table.cf['key']['column']='value'\n")
 	}
-
 }
 
 func currentTimeMillis() int64 {
