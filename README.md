@@ -15,8 +15,8 @@ Cassandra in Go.
 * Enable Go module and Setup Go package proxy
 
 ```shell
-go env -w GO111MODULE=on
-go env -w GOPROXY=https://goproxy.io,direct
+$ go env -w GO111MODULE=on
+$ go env -w GOPROXY=https://goproxy.io,direct
 ```
 
 * Download
@@ -31,44 +31,59 @@ export mg=$GOPATH/src/github.com/DistAlchemist
 Then make directories:
 
 ```shell
-mkdir -p $mg
-cd $mg
-git clone https://github.com/DistAlchemist/Mongongo.git
+$ mkdir -p $mg
+$ cd $mg
+$ git clone https://github.com/DistAlchemist/Mongongo.git
 # or git clone git@github.com:DistAlchemist/Mongongo.git
-cd Mongongo
+$ cd Mongongo
 ```
 
 * Setup [tmux](https://github.com/tmux/tmux/wiki) for multi-terminal (recommended)
 
 ```shell
-sudo apt install tmux
+$ sudo apt install tmux
 ```
 
 * Create a new session of tmux:
 
 ```shell
-tmux new -s mg
+$ tmux new -s mg
 ```
 
 * Build files:
 
 ```shell
-cd $mg
-cd Mongongo
-make
+$ cd $mg
+$ cd Mongongo
+$ make
 ```
 
 * Inside one terminal, run Mongongo server:
 
 ```shell
-bin/mg-server
+$ bin/mg-server
 ```
 
 * Inside another terminal, run command line interface:
 
 ```shell
-bin/cli 
+$ bin/cli 
 ```
+
+* To start servers on multiple nodes:
+
+```shell
+$ sudo chmod +x startallpeers.sh
+$ ./startallpeers.sh 
+```
+
+* To stop servers on multiple nodes:
+
+```shell
+$ sudo chmod +x stopallpeers.sh
+$ ./stopallpeers.sh
+```
+
 
 ## Design
 
