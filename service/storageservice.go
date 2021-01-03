@@ -61,6 +61,7 @@ func GetInstance() *StorageService {
 }
 
 func (ss *StorageService) init() {
+	log.Printf("initializing storage service...\n")
 	gob.Register(db.ColumnFactory{})
 	gob.Register(db.SuperColumnFactory{})
 	gob.Register(db.SuperColumn{})

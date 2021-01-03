@@ -96,6 +96,7 @@ func GetGossiper() *Gossiper {
 
 // Start will start gossiper on control port
 func (g *Gossiper) Start(generation int) {
+	log.Printf("starting gossiper...\n")
 	g.localEndPoint = network.NewEndPoint(config.ControlPort)
 	// get the seeds from the config and initialize them.
 	seedHosts := config.Seeds
@@ -157,6 +158,7 @@ func (g *Gossiper) RunTimerTask() {
 }
 
 func (g *Gossiper) runTask() {
+	log.Printf("gossiper is running the timer task...\n")
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.endPointStateMap[*g.localEndPoint].GetHeartBeatState().UpdateHeartBeat()
@@ -214,12 +216,15 @@ func (g *Gossiper) doGossipToSeed(message *GossipDigestSynArgs) {
 	if size == 1 && ok {
 		return
 	}
+	log.Printf("gossip to seeds: %v\n", g.seeds)
 	if len(g.liveEndpoints) == 0 {
+		log.Printf("# of live endpoints is 0, gossip to seed\n")
 		g.sendGossip(message, g.seeds)
 	} else {
 		// gossip with the seed with some probability
 		prob := float64(len(g.seeds)) / float64(len(g.liveEndpoints)+len(g.unreachableEndpoints))
 		randDbl := g.rnd.Float64()
+		log.Printf("gossip with probability: %v <= %v?\n", randDbl, prob)
 		if randDbl <= prob {
 			g.sendGossip(message, g.seeds)
 		}
